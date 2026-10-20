@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Job logs and training checkpoints (figures and JSON results are kept for the report)
+logs/
+results/**/*.pt
+results/**/progress.jsonl
+
+# Per-user settings written by setup.sh / the dashboard
+config/deepdish.local.json
+
+.DS_Store

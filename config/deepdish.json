@@ -1,0 +1,22 @@
+{
+  "servers": [1, 2, 3, 4, 5],
+  "alias_template": "deepdish{n}",
+  "host_template": "mlds-deepdish{n}.ads.northwestern.edu",
+  "user": "",
+  "default_server": 1,
+  "remote_dir": "~/RL",
+  "control_path": "~/.ssh/cm-%C",
+  "control_persist": "4h",
+  "connect_timeout": 10,
+  "upload_excludes": [
+    ".git/",
+    ".venv/",
+    "__pycache__/",
+    "*.pyc",
+    ".DS_Store",
+    "results/",
+    "logs/",
+    "config/deepdish.local.json",
+    "*.pdf"
+  ]
+}

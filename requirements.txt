@@ -1,0 +1,6 @@
+# Needed everywhere the experiments run (your laptop and deepdish).
+numpy>=1.24
+matplotlib>=3.7
+torch>=2.1
+gymnasium[atari]>=1.0
+ale-py>=0.9
