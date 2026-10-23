@@ -14,7 +14,6 @@ matplotlib.use("Agg")  # headless, so plotting works over ssh on deepdish
 
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
-from cycler import cycler  # noqa: E402
 
 # Chart ink and a colorblind-validated categorical order (blue, orange, aqua, ...).
 SURFACE = "#fcfcfb"
@@ -60,7 +59,7 @@ def apply_style() -> None:
             "legend.frameon": False,
             "legend.fontsize": 9,
             "lines.linewidth": 1.6,
-            "axes.prop_cycle": cycler(color=SERIES),
+            "axes.prop_cycle": plt.cycler(color=SERIES),
         }
     )
 
