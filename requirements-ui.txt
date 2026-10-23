@@ -1,3 +1,5 @@
-# Dashboard (only needed on the machine where you run `python run.py ui`).
+# Dashboard and report PDFs (only needed on the machine where you run `python run.py ui` or `report`).
 streamlit>=1.37
 pandas>=1.5
+# PDF of the report and run instructions (python run.py report). reportlab 5 needs Python >= 3.10.
+reportlab>=4.0,<5

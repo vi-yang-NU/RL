@@ -4,7 +4,7 @@
     python run.py dp                              Section 2: enumeration, value and policy iteration
     python run.py pg --part 1 --env cartpole      Policy gradient Part 1 / Part 2 (cartpole or pong)
     python run.py tests --section dp              validation experiments (dp, pg1, pg2 or all)
-    python run.py report                          rebuild report/report.md
+    python run.py report                          rebuild report/report.md, report.pdf and instructions.pdf
     python run.py check                           check packages, GPU and gym environments
     python run.py ui                              open the dashboard
 """
@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     tests.add_argument("--section", choices=["dp", "pg1", "pg2", "all"], default="all")
     tests.add_argument("-k", "--match", help="only run tests whose name or title contains this text")
     tests.add_argument("--list", action="store_true", help="list the registered tests without running them")
-    sub.add_parser("report", help="rebuild report/report.md from answers, figures and test results")
+    sub.add_parser("report", help="rebuild report/report.md and the PDFs (report, run instructions)")
     sub.add_parser("check", help="check packages, GPU and gym environments on this machine")
     ui = sub.add_parser("ui", help="open the dashboard (Streamlit)")
     ui.add_argument("--port", type=int, default=8501)
@@ -49,18 +49,56 @@ def main(argv: list[str] | None = None) -> int:
             return harness.list_tests(sections)
         return harness.run(sections, args.match)
     if args.command == "report":
-        from report.build import build_report
+        from report.build import build_pdfs, build_report
 
         print(f"wrote {build_report().relative_to(ROOT)}")
+        try:
+            pdfs = build_pdfs()
+        except ImportError as e:
+            print(f"skipped the PDFs: {e} (pip install -r requirements-ui.txt)")
+            return 1
+        for path in pdfs:
+            print(f"wrote {path.relative_to(ROOT)}")
         return 0
     if args.command == "check":
         from rl import check
 
         return check.main(args)
     if args.command == "ui":
-        cmd = [sys.executable, "-m", "streamlit", "run", str(ROOT / "ui" / "app.py"), "--server.port", str(args.port)]
-        return subprocess.call(cmd, cwd=ROOT)
+        return run_ui(args.port)
     return 2
+
+
+def run_ui(port: int) -> int:
+    """Serve the dashboard on this machine only and open it in the browser.
+
+    Headless mode skips Streamlit's first-run email prompt, which would otherwise wait for an answer in the
+    terminal. Over ssh (e.g. VS Code Remote-SSH on deepdish) no browser is opened; forward the port instead.
+    """
+    import os
+    import socket
+    import time
+    import webbrowser
+
+    url = f"http://localhost:{port}"
+    cmd = [sys.executable, "-m", "streamlit", "run", str(ROOT / "ui" / "app.py"), "--server.port", str(port),
+           "--server.address", "localhost", "--server.headless", "true"]
+    proc = subprocess.Popen(cmd, cwd=ROOT)
+    try:
+        for _ in range(120):
+            if proc.poll() is not None:
+                return proc.returncode
+            try:
+                socket.create_connection(("localhost", port), timeout=0.5).close()
+                break
+            except OSError:
+                time.sleep(0.5)
+        print(f"Dashboard: {url}  (Ctrl+C stops it)", flush=True)
+        if not os.environ.get("SSH_CONNECTION"):
+            webbrowser.open(url)
+        return proc.wait()
+    except KeyboardInterrupt:
+        return proc.wait()
 
 
 if __name__ == "__main__":

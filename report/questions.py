@@ -2,8 +2,9 @@
 
 The dashboard shows each one with an answer box; report/build.py turns them into report.md.
 `figures` names entries of rl.outputs.FIGURES shown with the question, `evals` names
-policy-gradient runs whose evaluation mean and standard deviation belong with it, and
-`tests` names the harness section whose results belong with it.
+policy-gradient runs whose evaluation mean and standard deviation belong with it,
+`tests` names the harness section whose results belong with it, and `source` names a
+Markdown file in report/ that holds the answer instead of the dashboard's answer box.
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ class Question:
     figures: tuple[str, ...] = ()
     evals: tuple[str, ...] = ()
     tests: str | None = None
+    source: str | None = None
 
 
 SECTIONS = [
@@ -75,7 +77,8 @@ def _shared(section: str) -> list[Question]:
 
 
 QUESTIONS: list[Question] = [
-    Question("how_to_run", "submission", "Instructions for running the code", "Instructions of how to run your code."),
+    Question("how_to_run", "submission", "Instructions for running the code", "Instructions of how to run your code.",
+             source="instructions.md"),
     # Section 2
     Question("dp_description", "dp", "Solution overview", DESCRIPTION),
     Question(
@@ -136,6 +139,7 @@ QUESTIONS: list[Question] = [
     ),
     *_shared("pg2"),
 ]
+QUESTION_BY_ID = {q.id: q for q in QUESTIONS}
 
 
 def questions_for(section: str) -> list[Question]:

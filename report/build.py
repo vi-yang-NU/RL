@@ -1,6 +1,6 @@
-"""`python run.py report`: assemble report/report.md from the answers, figures and test results.
-
-Convert it to the PDF for Canvas with e.g. `cd report && pandoc report.md -o report.pdf`.
+"""`python run.py report`: assemble report/report.md from the answers, figures and test results,
+then render it to report/report.pdf, and the run instructions (report/instructions.md) to
+report/instructions.pdf.
 """
 from __future__ import annotations
 
@@ -8,10 +8,14 @@ import os
 from pathlib import Path
 
 from report import answers
-from report.questions import SECTIONS, Question, questions_for
+from report.questions import QUESTION_BY_ID, SECTIONS, Question, questions_for
 from rl.outputs import FIGURE_BY_KEY, RESULTS, read_json, tests_dir
 
-REPORT_FILE = Path(__file__).resolve().parent / "report.md"
+REPORT_DIR = Path(__file__).resolve().parent
+REPORT_FILE = REPORT_DIR / "report.md"
+REPORT_PDF = REPORT_DIR / "report.pdf"
+INSTRUCTIONS_PDF = REPORT_DIR / "instructions.pdf"
+TITLE = "Assignment 1: Reinforcement Learning"
 PENDING = "*Answer pending.*"
 
 
@@ -21,6 +25,15 @@ def _quote(text: str) -> list[str]:
 
 def _cell(text: str) -> str:
     return " ".join(str(text).split()).replace("|", "\\|") or "–"
+
+
+def _demote(markdown: str) -> str:
+    """Headings one level deeper, so a whole document fits under a report section."""
+    lines, fenced = [], False
+    for line in markdown.splitlines():
+        fenced ^= line.lstrip().startswith("```")
+        lines.append(f"#{line}" if not fenced and line.startswith("#") else line)
+    return "\n".join(lines)
 
 
 def _tests_block(section: str) -> list[str]:
@@ -64,14 +77,16 @@ def _question(q: Question, text: str, fig_no: int, out_dir: Path) -> tuple[list[
             lines += ["**Evaluation over 500 episodes:** mean and standard deviation pending.", ""]
     if q.tests:
         lines += _tests_block(q.tests)
+    if q.source:
+        text = _demote(text)
     lines += [text.strip() or PENDING, ""]
     return lines, fig_no
 
 
 def build_report(path: Path = REPORT_FILE) -> Path:
     data = answers.load()
-    meta, text = data["meta"], data["answers"]
-    lines = ["# Assignment 1: Reinforcement Learning", ""]
+    meta = data["meta"]
+    lines = [f"# {TITLE}", ""]
     for key, label in answers.META_FIELDS.items():
         value = meta.get(key, "").strip()
         if key == "repo_url" and value:
@@ -84,9 +99,31 @@ def build_report(path: Path = REPORT_FILE) -> Path:
         if section.key != "submission":
             lines += [f"## {section.title} ({section.points} points)", ""]
         for q in questions_for(section.key):
-            block, fig_no = _question(q, text.get(q.id, ""), fig_no, path.parent)
+            block, fig_no = _question(q, answers.text(q, data), fig_no, path.parent)
             if section.key == "submission":
                 block[0] = f"## {q.title}"
             lines += block
     path.write_text("\n".join(lines).rstrip() + "\n")
     return path
+
+
+def instructions_markdown() -> str:
+    """report/instructions.md under a title line with your name and the repository link."""
+    meta = answers.load()["meta"]
+    url = meta.get("repo_url", "").strip()
+    byline = " · ".join(x for x in (TITLE, meta.get("name", "").strip(), f"<{url}>" if url else "") if x)
+    body = answers.text(QUESTION_BY_ID["how_to_run"], {})
+    return f"# How to run the code\n\n{byline}\n\n{body}"
+
+
+def build_pdfs() -> list[Path]:
+    """report/report.pdf (from report.md, built first) and report/instructions.pdf. Needs reportlab."""
+    from report.pdf import markdown_to_pdf
+
+    author = answers.load()["meta"].get("name", "")
+    if not REPORT_FILE.exists():
+        build_report()
+    return [
+        markdown_to_pdf(REPORT_FILE.read_text(), REPORT_PDF, title=TITLE, author=author),
+        markdown_to_pdf(instructions_markdown(), INSTRUCTIONS_PDF, title=f"{TITLE}: how to run the code", author=author),
+    ]

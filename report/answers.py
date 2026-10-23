@@ -1,12 +1,18 @@
-"""Discussion answers and submission details, saved by the dashboard to report/answers.json."""
+"""Discussion answers and submission details, saved by the dashboard to report/answers.json.
+
+A question with a `source` (the run instructions) is answered by that Markdown file in report/ instead.
+"""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
+from report.questions import Question
 from rl.outputs import read_json, write_json
 
-ANSWERS_FILE = Path(__file__).resolve().parent / "answers.json"
+REPORT_DIR = Path(__file__).resolve().parent
+ANSWERS_FILE = REPORT_DIR / "answers.json"
 META_FIELDS = {
     "name": "Name",
     "github_username": "GitHub username",
@@ -32,3 +38,11 @@ def save_meta(field: str, value: str) -> None:
     data = load()
     data["meta"][field] = value
     write_json(ANSWERS_FILE, data)
+
+
+def text(question: Question, data: dict[str, Any]) -> str:
+    """The answer to `question`: its source file (without HTML comments) or the answer saved in `data`."""
+    if question.source:
+        path = REPORT_DIR / question.source
+        return re.sub(r"<!--.*?-->\s*", "", path.read_text(), flags=re.S) if path.exists() else ""
+    return data["answers"].get(question.id, "")

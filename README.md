@@ -21,7 +21,7 @@ rl/                  assignment code: dp/ (Section 2), pg/ (Parts 1 and 2), plot
 tests/               validation-experiment harness + one test file per part
 ui/                  Streamlit dashboard and the deepdish connection code
 scripts/jobs.sh      background job runner (single GPU), used by the dashboard and from the terminal
-report/              questions from the handout, saved answers, report builder, report.md
+report/              questions from the handout, saved answers, run instructions, report builder, report.md/.pdf
 results/             everything the runs produce (figures and JSON are committed; checkpoints are not)
 ```
 
@@ -31,7 +31,7 @@ results/             everything the runs produce (figures and JSON are committed
 git clone <this repository> && cd RL
 ./setup.sh                    # or: bash setup.sh
 source .venv/bin/activate
-python run.py ui              # dashboard at http://localhost:8501
+python run.py ui              # opens the dashboard at http://localhost:8501
 ```
 
 `setup.sh` on your computer:
@@ -70,20 +70,27 @@ status is cached for 10 seconds.
 
 ## 3. Running code on deepdish
 
-In the dashboard's **Run** tab, with a deepdish server selected:
+The sidebar (hide it with **«** at its top, bring it back with **»** at the top left) holds the connection and
+**Jobs run on**: the server or this computer, and the GPU. The handout requires a **single GPU** on deepdish: each
+job sees only the chosen card through `CUDA_VISIBLE_DEVICES`. **Show GPU usage** lists each card's memory use.
+
+Once per server, in the **Setup (deepdish)** tab:
 
 1. **Upload code** copies this project to the folder on deepdish (`~/RL` by default). The server's `results/`,
    `logs/` and `.venv/` are never overwritten.
-2. First time only: launch the job **Install the Python environment** (`setup.sh --server`). deepdish's GPUs are
-   GTX 1080s (compute capability 6.1), which current default PyTorch CUDA builds no longer support, so the script
-   detects this and installs the newest CUDA 12.6 build of PyTorch (`torch<2.15`) instead.
+2. Launch **Install the Python environment** (`setup.sh --server`). deepdish's GPUs are GTX 1080s (compute
+   capability 6.1), which current default PyTorch CUDA builds no longer support, so the script detects this and
+   installs the newest CUDA 12.6 build of PyTorch (`torch<2.15`) instead.
 3. Launch **Environment check**: it should end with `ready` and `test computation on the GPU: ok`.
-4. **Show GPUs** and pick one card. The handout requires a **single GPU** on deepdish: each job sees only the chosen
-   card through `CUDA_VISIBLE_DEVICES`.
-5. Pick a job (Section 2, Part 1/2 × CartPole/Pong, validation tests), optionally add a run tag or extra arguments,
-   and press **Launch**. Jobs keep running after you disconnect or close the dashboard.
-6. Under **Jobs**, follow the log (turn on auto-refresh) and, for policy-gradient runs, the live training curve.
-7. **Download results** copies `results/` back, and the plots appear in the section tabs.
+
+Then each part's tab (Section 2, Part 1, Part 2) has its own **Run** panel above the questions:
+
+1. Pick the job (e.g. *(a) CartPole-v1*, *(b) Pong-v5* or *Validation tests*), optionally add a run tag or extra
+   arguments, and press **Launch**. *Upload code first* (on by default) sends your latest code before launching.
+   Jobs keep running after you disconnect or close the dashboard.
+2. Under **Jobs** (that part's jobs only), follow the log (turn on auto-refresh) and, for policy-gradient runs, the
+   live training curve.
+3. **Download results** copies `results/` back, and the plots below update.
 
 The same from a terminal:
 
@@ -97,7 +104,7 @@ scripts/jobs.sh tail part1_cartpole 50
 scripts/jobs.sh stop part1_cartpole
 ```
 
-On your laptop, choose **Run on: this computer** to run the same jobs locally (CPU).
+On your laptop, choose **Jobs run on: this computer** to run the same jobs locally (CPU).
 
 ## 4. Commands
 
@@ -107,9 +114,9 @@ On your laptop, choose **Run on: this computer** to run the same jobs locally (C
 | `python run.py pg --part 1 --env cartpole` | Part 1 (a); `--env pong` for (b) | `results/pg/part1_cartpole/` |
 | `python run.py pg --part 2 --env pong --baseline <name>` | Part 2 with a baseline | `results/pg/part2_pong/` |
 | `python run.py tests --section dp\|pg1\|pg2\|all [-k text] [--list]` | validation experiments | `results/tests/<section>.json` |
-| `python run.py report` | rebuild the report | `report/report.md` |
+| `python run.py report` | rebuild the report and its PDFs | `report/report.md`, `report.pdf`, `instructions.pdf` |
 | `python run.py check` | packages, GPU, CartPole-v1 and Pong-v5 | console |
-| `python run.py ui [--port 8501]` | dashboard | browser |
+| `python run.py ui [--port 8501]` | dashboard, on this computer only (localhost); opens your browser | browser |
 
 `pg` options: `--episodes`, `--lr` (default 0.01, as in the handout), `--gamma` (default 0.95 CartPole / 0.99 Pong),
 `--eval-episodes` (default 500), `--seed`, `--device auto|cpu|cuda`, `--tag NAME` (keeps runs side by side in
@@ -171,14 +178,24 @@ The section tabs show them, and the report includes a table of each test's descr
 
 ## 7. Report
 
-Each section tab lists that part's questions from the handout, with its plots, evaluation statistics and validation
-results, and an answer box. Answers save to `report/answers.json` when you click outside the box. In the **Report**
-tab, fill in the submission details (name, GitHub username, repository name and link), then **Build report** to
-regenerate `report/report.md` (or run `python run.py report`). To make the PDF for Canvas:
+The report and the dashboard are written for the instructors grading the assignment; `report/instructions.pdf`
+walks them through setup, where each answer is, and the dashboard.
 
-```bash
-cd report && pandoc report.md -o report.pdf
-```
+Each section tab lists that part's questions from the handout, with its plots, evaluation statistics and validation
+results, and the answer, shown formatted. Write or change an answer under **Write answer** / **Edit answer**; it
+saves to `report/answers.json` when you click outside the box. In the **Overview** tab, check the submission details
+(name, GitHub username, repository name and link; **Edit submission details** changes them), then press **Build
+report and PDFs** (or run `python run.py report`). It writes:
+
+| File | What it is |
+|---|---|
+| `report/report.md` | the report in Markdown |
+| `report/report.pdf` | the same report as a PDF, for Canvas |
+| `report/instructions.pdf` | the instructions for running the code on their own, with your name and the repository link |
+
+The run instructions live in `report/instructions.md` (edit them there). They are also the report's
+"Instructions for running the code" section, which the handout requires. The PDFs are made with `reportlab`
+(in `requirements-ui.txt`), so pandoc and LaTeX are not needed.
 
 The questions themselves live in `report/questions.py`.
 
@@ -192,3 +209,5 @@ The questions themselves live in `report/questions.py`.
 | `no kernel image is available` / GPU test fails | The torch build doesn't support the GPU: rerun `./setup.sh --server` on deepdish, or set `TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126`. |
 | "already running" when launching | A job with that name is running; stop it or set a run tag. |
 | Port 8501 in use | `python run.py ui --port 8502` |
+| The sidebar is gone | Click **»** at the top left of the page. |
+| `reportlab requires 3.10+` | reportlab 5 was installed on Python 3.9: `pip install -r requirements-ui.txt` reinstalls 4.x. |
