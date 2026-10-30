@@ -5,5 +5,9 @@
     "repo_name": "RL",
     "repo_url": "https://github.com/vi-yang-NU/RL"
   },
-  "answers": {}
+  "answers": {
+    "dp_description": "Thinking from a greedy algorithm perspective, generally speaking we know that it is not worth it for our shuttle to move to the other platform if the cost of moving the shuttle is more than us waiting until that number breaks even. The state is the amount of people waiting at Station A, the action is taking people on the shuttle to station B. Reward is revenue-cost, and random demand is the amount of people arriving at the station. \n\nIn order to map this out, we should try with, explicitly we have 3 different methods we will explore in this Value and Policy iteration section: \nAssume the number of people can't exceed 200, and use discount rate of 0.95 (and additional assumptions will be listed too)\n\n1. Enumeration: backward induction, so we're assuming a Time period = 500,  we start at the last Time step, and apply the bellman backup going backwards \n2. Value iteration: Repeat Bellman on one value table until it converges then read the best policy off the table, time = infinite. \n3. Policy iteration: evaluate and greedy change policy and stop when policy stops changing \n\n",
+    "dp_assumptions": " The number of people can't exceed 200, and Discount rate of 0.95",
+    "dp_model": "Markov Decision Process means "
+  }
 }

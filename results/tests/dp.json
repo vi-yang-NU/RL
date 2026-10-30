@@ -1,0 +1,1236 @@
+{
+  "section": "dp",
+  "title": "Value and Policy Iteration",
+  "updated": "2026-10-26 12:34:38",
+  "host": "mlds-deepdish2",
+  "python": "3.10.12",
+  "tests": [
+    {
+      "name": "methods_agree",
+      "title": "Three solvers, one answer",
+      "what": "Solves the handout's problem (K = 15, c_f = 100, c_h = 2, A ~ Unif{1..5}, at most 200 waiting, \u03b3 = 0.95) with enumeration over T = 500 periods, value iteration and policy iteration, and compares the three value functions and policies state by state.",
+      "how": "The three methods are different algorithms for the same optimality equation, so they must agree: enumeration with T = 500 differs from the infinite-horizon solution by at most \u03b3^500 \u00b7 max V \u2248 3e-8, and value iteration's stopping rule guarantees \u2016V \u2212 V*\u2016 \u2264 \u03b3\u00b7tol/(1 \u2212 \u03b3) (Lean: vi_error_bound). The values of policy iteration must have a zero Bellman residual, all policies must coincide, and the optimal policy must be a threshold rule (dispatch once enough customers wait).",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "enumeration (T = 500) and policy iteration agree to 1e-6",
+          "passed": true,
+          "detail": "max difference 4.94e-09"
+        },
+        {
+          "name": "value iteration is within its proven error bound of policy iteration",
+          "passed": true,
+          "detail": "1.87e-08 \u2264 1.88e-08"
+        },
+        {
+          "name": "the three policies are identical",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Bellman residual of the policy-iteration values is ~0",
+          "passed": true,
+          "detail": "4.55e-13"
+        },
+        {
+          "name": "the optimal policy is a threshold policy",
+          "passed": true,
+          "detail": "dispatch iff s \u2265 13"
+        },
+        {
+          "name": "values are non-decreasing in the number waiting (Lean: value_mono_state)",
+          "passed": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "max |V_enum \u2212 V_PI|": 4.940375220030546e-09,
+        "max |V_VI \u2212 V_PI|": 1.8745595298241824e-08,
+        "max |V_enum \u2212 V_VI|": 1.380612957291305e-08,
+        "VI iterations": 474,
+        "VI error bound": 1.875787347671574e-08,
+        "PI improvement steps": 6,
+        "dispatch threshold": 13,
+        "V*(0)": 576.6701677662196,
+        "V*(200)": 3821.586477183889
+      },
+      "tables": {
+        "values and policy at selected states": [
+          {
+            "s": 0,
+            "V enumeration": 576.6702,
+            "V value iteration": 576.6702,
+            "V policy iteration": 576.6702,
+            "optimal action": "Do not dispatch"
+          },
+          {
+            "s": 5,
+            "V enumeration": 625.4397,
+            "V value iteration": 625.4397,
+            "V policy iteration": 625.4397,
+            "optimal action": "Do not dispatch"
+          },
+          {
+            "s": 10,
+            "V enumeration": 660.123,
+            "V value iteration": 660.123,
+            "V policy iteration": 660.123,
+            "optimal action": "Do not dispatch"
+          },
+          {
+            "s": 12,
+            "V enumeration": 672.8922,
+            "V value iteration": 672.8922,
+            "V policy iteration": 672.8922,
+            "optimal action": "Do not dispatch"
+          },
+          {
+            "s": 13,
+            "V enumeration": 676.6702,
+            "V value iteration": 676.6702,
+            "V policy iteration": 676.6702,
+            "optimal action": "Dispatch"
+          },
+          {
+            "s": 14,
+            "V enumeration": 676.6702,
+            "V value iteration": 676.6702,
+            "V policy iteration": 676.6702,
+            "optimal action": "Dispatch"
+          },
+          {
+            "s": 15,
+            "V enumeration": 676.6702,
+            "V value iteration": 676.6702,
+            "V policy iteration": 676.6702,
+            "optimal action": "Dispatch"
+          },
+          {
+            "s": 20,
+            "V enumeration": 725.4397,
+            "V value iteration": 725.4397,
+            "V policy iteration": 725.4397,
+            "optimal action": "Dispatch"
+          },
+          {
+            "s": 30,
+            "V enumeration": 801.6702,
+            "V value iteration": 801.6702,
+            "V policy iteration": 801.6702,
+            "optimal action": "Dispatch"
+          },
+          {
+            "s": 50,
+            "V enumeration": 1001.5277,
+            "V value iteration": 1001.5277,
+            "V policy iteration": 1001.5277,
+            "optimal action": "Dispatch"
+          },
+          {
+            "s": 100,
+            "V enumeration": 1709.0425,
+            "V value iteration": 1709.0425,
+            "V policy iteration": 1709.0425,
+            "optimal action": "Dispatch"
+          },
+          {
+            "s": 200,
+            "V enumeration": 3821.5865,
+            "V value iteration": 3821.5865,
+            "V policy iteration": 3821.5865,
+            "optimal action": "Dispatch"
+          }
+        ]
+      },
+      "figures": [
+        "results/tests/dp/methods_agree/value_functions.png"
+      ],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] enumeration (T = 500) and policy iteration agree to 1e-6: max difference 4.94e-09\n  [PASS] value iteration is within its proven error bound of policy iteration: 1.87e-08 \u2264 1.88e-08\n  [PASS] the three policies are identical\n  [PASS] Bellman residual of the policy-iteration values is ~0: 4.55e-13\n  [PASS] the optimal policy is a threshold policy: dispatch iff s \u2265 13\n  [PASS] values are non-decreasing in the number waiting (Lean: value_mono_state)\n",
+      "duration_s": 0.45,
+      "finished": "2026-10-26 12:34:27"
+    },
+    {
+      "name": "contraction",
+      "title": "Value iteration contracts at rate \u03b3",
+      "what": "Runs value iteration for \u03b3 \u2208 {0.5, 0.8, 0.95} and records the change \u2016V_{n+1} \u2212 V_n\u2016\u221e after every iteration, the ratio of successive changes, and the distance of the final iterate from the policy-iteration solution.",
+      "how": "The Bellman operator is a \u03b3-contraction (Lean: bellman_contraction), so successive changes must shrink by at least the factor \u03b3 every iteration (value_succ_sub_bound) and the number of iterations to a tolerance must scale like log(tol)/log(\u03b3). The stopping rule's a-posteriori bound \u03b3\u00b7\u0394/(1 \u2212 \u03b3) must dominate the true error (vi_error_bound). Ratios are only examined while the changes are far above floating-point noise.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "\u03b3 = 0.5: every ratio of successive changes \u2264 \u03b3",
+          "passed": true,
+          "detail": "max ratio 0.500000"
+        },
+        {
+          "name": "\u03b3 = 0.5: \u0394_n \u2264 \u03b3^(n\u22121) \u0394_1 (geometric decay)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "\u03b3 = 0.5: true error \u2264 stopping-rule bound",
+          "passed": true,
+          "detail": "5.82e-09 \u2264 5.82e-09"
+        },
+        {
+          "name": "\u03b3 = 0.5: iteration count within 15% of the contraction prediction",
+          "passed": true,
+          "detail": "37 vs 35"
+        },
+        {
+          "name": "\u03b3 = 0.8: every ratio of successive changes \u2264 \u03b3",
+          "passed": true,
+          "detail": "max ratio 0.800000"
+        },
+        {
+          "name": "\u03b3 = 0.8: \u0394_n \u2264 \u03b3^(n\u22121) \u0394_1 (geometric decay)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "\u03b3 = 0.8: true error \u2264 stopping-rule bound",
+          "passed": true,
+          "detail": "3.53e-08 \u2264 3.53e-08"
+        },
+        {
+          "name": "\u03b3 = 0.8: iteration count within 15% of the contraction prediction",
+          "passed": true,
+          "detail": "101 vs 109"
+        },
+        {
+          "name": "\u03b3 = 0.95: every ratio of successive changes \u2264 \u03b3",
+          "passed": true,
+          "detail": "max ratio 0.950000"
+        },
+        {
+          "name": "\u03b3 = 0.95: \u0394_n \u2264 \u03b3^(n\u22121) \u0394_1 (geometric decay)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "\u03b3 = 0.95: true error \u2264 stopping-rule bound",
+          "passed": true,
+          "detail": "1.89e-07 \u2264 1.89e-07"
+        },
+        {
+          "name": "\u03b3 = 0.95: iteration count within 15% of the contraction prediction",
+          "passed": true,
+          "detail": "429 vs 476"
+        }
+      ],
+      "metrics": {
+        "iterations (\u03b3 = 0.5)": 37,
+        "iterations (\u03b3 = 0.8)": 101,
+        "iterations (\u03b3 = 0.95)": 429
+      },
+      "tables": {
+        "convergence summary": [
+          {
+            "\u03b3": 0.5,
+            "iterations": 37,
+            "predicted \u2248 log(tol/\u0394\u2081)/log \u03b3": 35.2,
+            "max ratio \u0394_{n+1}/\u0394_n": 0.5,
+            "ratios checked": 25,
+            "true error vs PI": "5.82e-09",
+            "error bound": "5.82e-09"
+          },
+          {
+            "\u03b3": 0.8,
+            "iterations": 101,
+            "predicted \u2248 log(tol/\u0394\u2081)/log \u03b3": 109.4,
+            "max ratio \u0394_{n+1}/\u0394_n": 0.8,
+            "ratios checked": 63,
+            "true error vs PI": "3.53e-08",
+            "error bound": "3.53e-08"
+          },
+          {
+            "\u03b3": 0.95,
+            "iterations": 429,
+            "predicted \u2248 log(tol/\u0394\u2081)/log \u03b3": 475.9,
+            "max ratio \u0394_{n+1}/\u0394_n": 0.95,
+            "ratios checked": 252,
+            "true error vs PI": "1.89e-07",
+            "error bound": "1.89e-07"
+          }
+        ],
+        "first 10 changes for \u03b3 = 0.95": [
+          {
+            "n": 1,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 400.0,
+            "ratio": null
+          },
+          {
+            "n": 2,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 380.0,
+            "ratio": 0.95
+          },
+          {
+            "n": 3,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 361.0,
+            "ratio": 0.95
+          },
+          {
+            "n": 4,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 342.9500000000003,
+            "ratio": 0.9500000000000007
+          },
+          {
+            "n": 5,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 325.8025,
+            "ratio": 0.9499999999999993
+          },
+          {
+            "n": 6,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 281.1521062500001,
+            "ratio": 0.8629525747960807
+          },
+          {
+            "n": 7,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 244.65667181249955,
+            "ratio": 0.8701932739388805
+          },
+          {
+            "n": 8,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 215.6637431156255,
+            "ratio": 0.8814954504118583
+          },
+          {
+            "n": 9,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 188.95846560890595,
+            "ratio": 0.8761716869005569
+          },
+          {
+            "n": 10,
+            "\u2016V_{n+1} \u2212 V_n\u2016\u221e": 164.38455649507023,
+            "ratio": 0.8699507374033338
+          }
+        ]
+      },
+      "figures": [
+        "results/tests/dp/contraction/contraction.png"
+      ],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] \u03b3 = 0.5: every ratio of successive changes \u2264 \u03b3: max ratio 0.500000\n  [PASS] \u03b3 = 0.5: \u0394_n \u2264 \u03b3^(n\u22121) \u0394_1 (geometric decay)\n  [PASS] \u03b3 = 0.5: true error \u2264 stopping-rule bound: 5.82e-09 \u2264 5.82e-09\n  [PASS] \u03b3 = 0.5: iteration count within 15% of the contraction prediction: 37 vs 35\n  [PASS] \u03b3 = 0.8: every ratio of successive changes \u2264 \u03b3: max ratio 0.800000\n  [PASS] \u03b3 = 0.8: \u0394_n \u2264 \u03b3^(n\u22121) \u0394_1 (geometric decay)\n  [PASS] \u03b3 = 0.8: true error \u2264 stopping-rule bound: 3.53e-08 \u2264 3.53e-08\n  [PASS] \u03b3 = 0.8: iteration count within 15% of the contraction prediction: 101 vs 109\n  [PASS] \u03b3 = 0.95: every ratio of successive changes \u2264 \u03b3: max ratio 0.950000\n  [PASS] \u03b3 = 0.95: \u0394_n \u2264 \u03b3^(n\u22121) \u0394_1 (geometric decay)\n  [PASS] \u03b3 = 0.95: true error \u2264 stopping-rule bound: 1.89e-07 \u2264 1.89e-07\n  [PASS] \u03b3 = 0.95: iteration count within 15% of the contraction prediction: 429 vs 476\n",
+      "duration_s": 0.37,
+      "finished": "2026-10-26 12:34:27"
+    },
+    {
+      "name": "first_ten_steps",
+      "title": "The first 10 steps of backward induction, and 10 periods of the optimal policy",
+      "what": "On a station capped at 30 customers (same costs, K and arrivals as the handout), records the value function and the optimal first action after each of the first 10 backward-induction steps, recomputes the first two steps by hand in exact rational arithmetic, and then follows the optimal policy for 10 periods from an empty station, printing state, action, cost and next state.",
+      "how": "With one period left no shuttle is worth dispatching (100 + 2\u00b7(s \u2212 15)\u207a > 2s for s \u2264 30), so V\u2081(s) = 2s exactly; V\u2082 must equal the hand computation; values must grow with the horizon (Lean: value_mono_horizon) and with the queue (value_mono_state); the dispatch threshold must appear and settle as more periods are added. The 10-period trajectory lets one verify each cost and transition by hand (dispatch exactly when the queue reaches the threshold, 15 customers leave, 1-5 arrive).",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "V\u2080 \u2261 0",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "V\u2081(s) = 2s (no dispatch with one period left)",
+          "passed": true,
+          "detail": "max |actual - expected| = 0 (tolerance 1e-12)"
+        },
+        {
+          "name": "V\u2082 equals the hand computation in exact arithmetic",
+          "passed": true,
+          "detail": "max |actual - expected| = 1.42e-14 (tolerance 1e-09)"
+        },
+        {
+          "name": "values never decrease as periods are added (Lean: value_mono_horizon)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "every V_k is non-decreasing in the state (Lean: value_mono_state)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "a dispatch threshold appears within the first 10 steps and then settles",
+          "passed": true,
+          "detail": "thresholds by horizon: [None, None, None, 14, 12, 13, 13, 13, 13, 13]"
+        },
+        {
+          "name": "each step of the trajectory follows the model (threshold, cost, 1-5 arrivals)",
+          "passed": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {},
+      "tables": {
+        "value function after each backward step": [
+          {
+            "periods to go": 0,
+            "V(0)": 0.0,
+            "V(5)": 0.0,
+            "V(10)": 0.0,
+            "V(13)": 0.0,
+            "V(15)": 0.0,
+            "V(20)": 0.0,
+            "V(30)": 0.0,
+            "dispatch threshold": null
+          },
+          {
+            "periods to go": 1,
+            "V(0)": 0.0,
+            "V(5)": 10.0,
+            "V(10)": 20.0,
+            "V(13)": 26.0,
+            "V(15)": 30.0,
+            "V(20)": 40.0,
+            "V(30)": 60.0,
+            "dispatch threshold": null
+          },
+          {
+            "periods to go": 2,
+            "V(0)": 5.7,
+            "V(5)": 25.2,
+            "V(10)": 44.7,
+            "V(13)": 56.4,
+            "V(15)": 64.2,
+            "V(20)": 83.7,
+            "V(30)": 117.0,
+            "dispatch threshold": null
+          },
+          {
+            "periods to go": 3,
+            "V(0)": 16.53,
+            "V(5)": 45.055,
+            "V(10)": 73.58,
+            "V(13)": 90.695,
+            "V(15)": 102.105,
+            "V(20)": 130.63,
+            "V(30)": 171.15,
+            "dispatch threshold": null
+          },
+          {
+            "periods to go": 4,
+            "V(0)": 31.9627,
+            "V(5)": 69.0615,
+            "V(10)": 106.1602,
+            "V(13)": 128.4195,
+            "V(15)": 131.9627,
+            "V(20)": 169.0615,
+            "V(30)": 222.5925,
+            "dispatch threshold": 14
+          },
+          {
+            "periods to go": 5,
+            "V(0)": 51.5109,
+            "V(5)": 96.7547,
+            "V(10)": 139.1157,
+            "V(13)": 151.5109,
+            "V(15)": 151.5109,
+            "V(20)": 196.7547,
+            "V(30)": 271.4629,
+            "dispatch threshold": 12
+          },
+          {
+            "periods to go": 6,
+            "V(0)": 74.7243,
+            "V(5)": 127.0183,
+            "V(10)": 162.8917,
+            "V(13)": 174.7243,
+            "V(15)": 174.7243,
+            "V(20)": 227.0183,
+            "V(30)": 299.7243,
+            "dispatch threshold": 13
+          },
+          {
+            "periods to go": 7,
+            "V(0)": 101.0304,
+            "V(5)": 153.7505,
+            "V(10)": 184.3349,
+            "V(13)": 201.0304,
+            "V(15)": 201.0304,
+            "V(20)": 253.7505,
+            "V(30)": 326.0304,
+            "dispatch threshold": 13
+          },
+          {
+            "periods to go": 8,
+            "V(0)": 127.4398,
+            "V(5)": 175.2869,
+            "V(10)": 207.874,
+            "V(13)": 227.4398,
+            "V(15)": 227.4398,
+            "V(20)": 275.2869,
+            "V(30)": 352.4398,
+            "dispatch threshold": 13
+          },
+          {
+            "periods to go": 9,
+            "V(0)": 150.002,
+            "V(5)": 196.1419,
+            "V(10)": 232.4582,
+            "V(13)": 250.002,
+            "V(15)": 250.002,
+            "V(20)": 296.1419,
+            "V(30)": 375.002,
+            "dispatch threshold": 13
+          },
+          {
+            "periods to go": 10,
+            "V(0)": 169.8112,
+            "V(5)": 218.1636,
+            "V(10)": 254.737,
+            "V(13)": 269.8112,
+            "V(15)": 269.8112,
+            "V(20)": 318.1636,
+            "V(30)": 394.8112,
+            "dispatch threshold": 13
+          }
+        ],
+        "10 periods of the optimal policy from an empty station (one random trajectory)": [
+          {
+            "t": 0,
+            "state": 0,
+            "action": 0,
+            "cost": 0.0,
+            "next_state": 4
+          },
+          {
+            "t": 1,
+            "state": 4,
+            "action": 0,
+            "cost": 8.0,
+            "next_state": 9
+          },
+          {
+            "t": 2,
+            "state": 9,
+            "action": 0,
+            "cost": 18.0,
+            "next_state": 13
+          },
+          {
+            "t": 3,
+            "state": 13,
+            "action": 1,
+            "cost": 100.0,
+            "next_state": 2
+          },
+          {
+            "t": 4,
+            "state": 2,
+            "action": 0,
+            "cost": 4.0,
+            "next_state": 4
+          },
+          {
+            "t": 5,
+            "state": 4,
+            "action": 0,
+            "cost": 8.0,
+            "next_state": 9
+          },
+          {
+            "t": 6,
+            "state": 9,
+            "action": 0,
+            "cost": 18.0,
+            "next_state": 10
+          },
+          {
+            "t": 7,
+            "state": 10,
+            "action": 0,
+            "cost": 20.0,
+            "next_state": 15
+          },
+          {
+            "t": 8,
+            "state": 15,
+            "action": 1,
+            "cost": 100.0,
+            "next_state": 4
+          },
+          {
+            "t": 9,
+            "state": 4,
+            "action": 0,
+            "cost": 8.0,
+            "next_state": 7
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] V\u2080 \u2261 0\n  [PASS] V\u2081(s) = 2s (no dispatch with one period left): max |actual - expected| = 0 (tolerance 1e-12)\n  [PASS] V\u2082 equals the hand computation in exact arithmetic: max |actual - expected| = 1.42e-14 (tolerance 1e-09)\n  [PASS] values never decrease as periods are added (Lean: value_mono_horizon)\n  [PASS] every V_k is non-decreasing in the state (Lean: value_mono_state)\n  [PASS] a dispatch threshold appears within the first 10 steps and then settles: thresholds by horizon: [None, None, None, 14, 12, 13, 13, 13, 13, 13]\n  [PASS] each step of the trajectory follows the model (threshold, cost, 1-5 arrivals)\n",
+      "duration_s": 0.01,
+      "finished": "2026-10-26 12:34:27"
+    },
+    {
+      "name": "exact_reference",
+      "title": "Exact rational arithmetic agrees with the floating-point solvers",
+      "what": "Re-solves four small instances (two arrival values; a non-uniform arrival distribution; deterministic arrivals; the handout's costs on a 20-customer station) by backward induction in exact rational arithmetic, twice: with Python fractions and with the Lean definition that the formal proofs are about (lean/RLVerify/Shuttle.lean, exported to lean/reference/shuttle_reference.json), and compares with enumeration.",
+      "how": "The floating-point solver must reproduce the exact values to round-off (1e-12) at every horizon and state, and the optimal first actions must coincide. The Lean values are computed by the very definition whose properties are proved, so this ties the Python implementation to the verified model.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "enumeration matches exact fractions to 1e-12 on all instances and horizons",
+          "passed": true,
+          "detail": "2.84e-14"
+        },
+        {
+          "name": "enumeration matches the Lean-computed exact values to 1e-12",
+          "passed": true,
+          "detail": "2.84e-14"
+        },
+        {
+          "name": "optimal first actions match Lean's",
+          "passed": true,
+          "detail": "0 mismatches"
+        }
+      ],
+      "metrics": {
+        "max |float \u2212 exact fractions|": 2.842170943040401e-14,
+        "max |float \u2212 Lean exact|": 2.842170943040401e-14
+      },
+      "tables": {
+        "Lean reference instances": [
+          {
+            "instance": "two_arrival_values",
+            "states": 9,
+            "horizons": 8,
+            "V_T(0) exact (Lean)": "46703/16384",
+            "V_T(0) float": 2.85052490234375
+          },
+          {
+            "instance": "non_uniform_arrivals",
+            "states": 7,
+            "horizons": 6,
+            "V_T(0) exact (Lean)": "33757191/1600000",
+            "V_T(0) float": 21.098244375
+          },
+          {
+            "instance": "deterministic_arrivals",
+            "states": 11,
+            "horizons": 10,
+            "V_T(0) exact (Lean)": "4872483/262144",
+            "V_T(0) float": 18.587047576904297
+          },
+          {
+            "instance": "handout_parameters_small_station",
+            "states": 21,
+            "horizons": 4,
+            "V_T(0) exact (Lean)": "127851/4000",
+            "V_T(0) float": 31.96275
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] enumeration matches exact fractions to 1e-12 on all instances and horizons: 2.84e-14\n  [PASS] enumeration matches the Lean-computed exact values to 1e-12: 2.84e-14\n  [PASS] optimal first actions match Lean's: 0 mismatches\n",
+      "duration_s": 0.2,
+      "finished": "2026-10-26 12:34:28"
+    },
+    {
+      "name": "discount_sweep",
+      "title": "\u03b3 \u2192 0 makes the agent myopic; more foresight dispatches earlier",
+      "what": "Solves the problem for \u03b3 from 0 to 0.99 and records the dispatch threshold and V(0).",
+      "how": "With \u03b3 = 0 only the current period counts, and dispatching (\u2265 100) is never cheaper than holding (\u2264 2\u00b7200 but 100 + 2(s\u221215) > 2s), so the myopic agent never dispatches and V(s) = 2s exactly. As \u03b3 grows, future holding costs weigh more, so the threshold must not increase and V(0) must increase.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "\u03b3 = 0: never dispatch and V(s) = 2s",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "the threshold never increases with \u03b3",
+          "passed": true,
+          "detail": "[{'\u03b3': 0.0, 'dispatch threshold': 'never', 'V(0)': 0.0, 'V(200)': 400.0}, {'\u03b3': 0.3, 'dispatch threshold': 'never', 'V(0)': 3.673, 'V(200)': 571.429}, {'\u03b3': 0.6, 'dispatch threshold': 'never', 'V(0)': 22.5, 'V(200)': 1000.0}, {'\u03b3': 0.8, 'dispatch threshold': 14, 'V(0)': 96.706, 'V(200)': 1875.86}, {'\u03b3': 0.9, 'dispatch threshold': 13, 'V(0)': 255.26, 'V(200)': 2840.732}, {'\u03b3': 0.95, 'dispatch threshold': 13, 'V(0)': 576.67, 'V(200)': 3821.586}, {'\u03b3': 0.99, 'dispatch threshold': 13, 'V(0)': 3162.626, 'V(200)': 7137.914}]"
+        },
+        {
+          "name": "V(0) increases with \u03b3",
+          "passed": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "threshold at \u03b3 = 0.95": 13
+      },
+      "tables": {
+        "threshold and values versus \u03b3": [
+          {
+            "\u03b3": 0.0,
+            "dispatch threshold": "never",
+            "V(0)": 0.0,
+            "V(200)": 400.0
+          },
+          {
+            "\u03b3": 0.3,
+            "dispatch threshold": "never",
+            "V(0)": 3.673,
+            "V(200)": 571.429
+          },
+          {
+            "\u03b3": 0.6,
+            "dispatch threshold": "never",
+            "V(0)": 22.5,
+            "V(200)": 1000.0
+          },
+          {
+            "\u03b3": 0.8,
+            "dispatch threshold": 14,
+            "V(0)": 96.706,
+            "V(200)": 1875.86
+          },
+          {
+            "\u03b3": 0.9,
+            "dispatch threshold": 13,
+            "V(0)": 255.26,
+            "V(200)": 2840.732
+          },
+          {
+            "\u03b3": 0.95,
+            "dispatch threshold": 13,
+            "V(0)": 576.67,
+            "V(200)": 3821.586
+          },
+          {
+            "\u03b3": 0.99,
+            "dispatch threshold": 13,
+            "V(0)": 3162.626,
+            "V(200)": 7137.914
+          }
+        ]
+      },
+      "figures": [
+        "results/tests/dp/discount_sweep/discount_sweep.png"
+      ],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] \u03b3 = 0: never dispatch and V(s) = 2s\n  [PASS] the threshold never increases with \u03b3: [{'\u03b3': 0.0, 'dispatch threshold': 'never', 'V(0)': 0.0, 'V(200)': 400.0}, {'\u03b3': 0.3, 'dispatch threshold': 'never', 'V(0)': 3.673, 'V(200)': 571.429}, {'\u03b3': 0.6, 'dispatch threshold': 'never', 'V(0)': 22.5, 'V(200)': 1000.0}, {'\u03b3': 0.8, 'dispatch threshold': 14, 'V(0)': 96.706, 'V(200)': 1875.86}, {'\u03b3': 0.9, 'dispatch threshold': 13, 'V(0)': 255.26, 'V(200)': 2840.732}, {'\u03b3': 0.95, 'dispatch threshold': 13, 'V(0)': 576.67, 'V(200)': 3821.586}, {'\u03b3': 0.99, 'dispatch threshold': 13, 'V(0)': 3162.626, 'V(200)': 7137.914}]\n  [PASS] V(0) increases with \u03b3\n",
+      "duration_s": 0.37,
+      "finished": "2026-10-26 12:34:28"
+    },
+    {
+      "name": "parameter_sweep",
+      "title": "Cost parameters move the dispatch threshold the right way",
+      "what": "Sweeps the dispatch cost c_f, the holding cost c_h and the capacity K one at a time and records the optimal dispatch threshold; also solves the degenerate cases c_f = 0, c_h = 0 and K = 0.",
+      "how": "A dearer shuttle must not be dispatched earlier (threshold non-decreasing in c_f); dearer waiting must not delay dispatch (threshold non-increasing in c_h). Free shuttles are dispatched as soon as anyone waits, free waiting or a useless (K = 0) shuttle means never dispatching.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "threshold is non-decreasing in c_f",
+          "passed": true,
+          "detail": "[4, 8, 11, 13, 14, 15, 1000000000]"
+        },
+        {
+          "name": "threshold is non-increasing in c_h",
+          "passed": true,
+          "detail": "[1000000000, 15, 14, 13, 11, 8, 5]"
+        },
+        {
+          "name": "c_f = 0: dispatch whenever anyone is waiting",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "c_h = 0: never dispatch",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "K = 0: never dispatch",
+          "passed": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "threshold range over the c_f sweep": "4\u20131000000000"
+      },
+      "tables": {
+        "threshold versus dispatch cost c_f": [
+          {
+            "dispatch cost c_f": 10,
+            "dispatch threshold": 4
+          },
+          {
+            "dispatch cost c_f": 25,
+            "dispatch threshold": 8
+          },
+          {
+            "dispatch cost c_f": 50,
+            "dispatch threshold": 11
+          },
+          {
+            "dispatch cost c_f": 100,
+            "dispatch threshold": 13
+          },
+          {
+            "dispatch cost c_f": 200,
+            "dispatch threshold": 14
+          },
+          {
+            "dispatch cost c_f": 400,
+            "dispatch threshold": 15
+          },
+          {
+            "dispatch cost c_f": 800,
+            "dispatch threshold": "never"
+          }
+        ],
+        "threshold versus holding cost c_h": [
+          {
+            "holding cost c_h": 0.25,
+            "dispatch threshold": "never"
+          },
+          {
+            "holding cost c_h": 0.5,
+            "dispatch threshold": 15
+          },
+          {
+            "holding cost c_h": 1,
+            "dispatch threshold": 14
+          },
+          {
+            "holding cost c_h": 2,
+            "dispatch threshold": 13
+          },
+          {
+            "holding cost c_h": 4,
+            "dispatch threshold": 11
+          },
+          {
+            "holding cost c_h": 8,
+            "dispatch threshold": 8
+          },
+          {
+            "holding cost c_h": 16,
+            "dispatch threshold": 5
+          }
+        ],
+        "threshold versus capacity K": [
+          {
+            "capacity K": 1,
+            "dispatch threshold": "never"
+          },
+          {
+            "capacity K": 5,
+            "dispatch threshold": 5
+          },
+          {
+            "capacity K": 10,
+            "dispatch threshold": 9
+          },
+          {
+            "capacity K": 15,
+            "dispatch threshold": 13
+          },
+          {
+            "capacity K": 20,
+            "dispatch threshold": 16
+          },
+          {
+            "capacity K": 30,
+            "dispatch threshold": 17
+          },
+          {
+            "capacity K": 60,
+            "dispatch threshold": 17
+          }
+        ]
+      },
+      "figures": [
+        "results/tests/dp/parameter_sweep/parameter_sweep.png"
+      ],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] threshold is non-decreasing in c_f: [4, 8, 11, 13, 14, 15, 1000000000]\n  [PASS] threshold is non-increasing in c_h: [1000000000, 15, 14, 13, 11, 8, 5]\n  [PASS] c_f = 0: dispatch whenever anyone is waiting\n  [PASS] c_h = 0: never dispatch\n  [PASS] K = 0: never dispatch\n",
+      "duration_s": 0.42,
+      "finished": "2026-10-26 12:34:28"
+    },
+    {
+      "name": "structure_changes",
+      "title": "Changing the structure of the problem",
+      "what": "Solves variants of the model: (a) up to two shuttles per period; (b) holding cost charged at the end of the period instead of right after the dispatch; (c) holding charged before the dispatch; (d) a station cap of 400 instead of 200; (e) deterministic arrivals (always 3).",
+      "how": "(a) More actions can only lower the optimal cost, and the second shuttle is only used for long queues. (b) Charging c_h\u00b7(left + A) instead of c_h\u00b7left adds the constant c_h\u00b7E[A] per period, so the policy must be identical and every value must shift by exactly c_h\u00b7E[A]/(1 \u2212 \u03b3) = 120. (c) Charging everyone present costs more, so values rise. (d) Under the optimal policy the queue never approaches 200, so the cap is irrelevant: values must agree to round-off. (e) With deterministic arrivals a single simulated trajectory has no noise, so its discounted cost must equal V(0) to within \u03b3^horizon.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "(a) allowing two shuttles never increases the cost",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "(a) two shuttles are only sent for long queues",
+          "passed": true,
+          "detail": "second shuttle from s = 28"
+        },
+        {
+          "name": "(b) end-of-period holding: same policy",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "(b) end-of-period holding: values shift by exactly c_h\u00b7E[A]/(1 \u2212 \u03b3) = 120",
+          "passed": true,
+          "detail": "max |actual - expected| = 1.01e-12 (tolerance 1e-06)"
+        },
+        {
+          "name": "(c) charging everyone present costs more",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "(d) a cap of 400 gives the same values for s \u2264 200",
+          "passed": true,
+          "detail": "max |actual - expected| = 1.14e-13 (tolerance 1e-06)"
+        },
+        {
+          "name": "(d) same threshold with the larger cap",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "(e) deterministic arrivals: the simulated trajectory has no variance",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "(e) deterministic arrivals: simulated discounted cost = V(0)",
+          "passed": true,
+          "detail": "max |actual - expected| = 1.59e-12 (tolerance 1.00001e-09)"
+        }
+      ],
+      "metrics": {
+        "(a) largest saving from a second shuttle": 1010.8106226993282,
+        "(c) threshold when holding is charged before dispatch": 13
+      },
+      "tables": {
+        "variants": [
+          {
+            "variant": "handout",
+            "threshold": 13,
+            "V(0)": 576.67,
+            "V(200)": 3821.586
+          },
+          {
+            "variant": "(a) up to 2 shuttles",
+            "threshold": 13,
+            "V(0)": 576.67,
+            "V(200)": 2810.776
+          },
+          {
+            "variant": "(b) holding at end of period",
+            "threshold": 13,
+            "V(0)": 696.67,
+            "V(200)": 3941.586
+          },
+          {
+            "variant": "(c) holding before dispatch",
+            "threshold": 13,
+            "V(0)": 680.262,
+            "V(200)": 4209.81
+          },
+          {
+            "variant": "(d) cap 400",
+            "threshold": 13,
+            "V(0)": 576.67,
+            "V(200)": 3821.586
+          },
+          {
+            "variant": "(e) arrivals always 3",
+            "threshold": 13,
+            "V(0)": 569.753,
+            "V(200)": 3819.214
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] (a) allowing two shuttles never increases the cost\n  [PASS] (a) two shuttles are only sent for long queues: second shuttle from s = 28\n  [PASS] (b) end-of-period holding: same policy\n  [PASS] (b) end-of-period holding: values shift by exactly c_h\u00b7E[A]/(1 \u2212 \u03b3) = 120: max |actual - expected| = 1.01e-12 (tolerance 1e-06)\n  [PASS] (c) charging everyone present costs more\n  [PASS] (d) a cap of 400 gives the same values for s \u2264 200: max |actual - expected| = 1.14e-13 (tolerance 1e-06)\n  [PASS] (d) same threshold with the larger cap\n  [PASS] (e) deterministic arrivals: the simulated trajectory has no variance\n  [PASS] (e) deterministic arrivals: simulated discounted cost = V(0): max |actual - expected| = 1.59e-12 (tolerance 1.00001e-09)\n",
+      "duration_s": 0.11,
+      "finished": "2026-10-26 12:34:28"
+    },
+    {
+      "name": "simulation",
+      "title": "Monte Carlo rollouts reproduce the value function",
+      "what": "Simulates the optimal policy from several starting queues (5000 trajectories of 600 periods each) and compares the average discounted cost with V*(s); also simulates two deliberately worse threshold policies (dispatch at 5 and at 30).",
+      "how": "V*(s) is defined as the expected discounted cost of the optimal policy, so the sample mean must land within three standard errors (plus the negligible truncation error \u03b3^600\u00b7max cost/(1 \u2212 \u03b3)). Any other policy must cost at least as much in every state, both in simulation and when evaluated exactly.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "start 0: simulation within 3 s.e. of V*",
+          "passed": true,
+          "detail": "gap 0.163, s.e. 0.443"
+        },
+        {
+          "name": "start 13: simulation within 3 s.e. of V*",
+          "passed": true,
+          "detail": "gap 0.219, s.e. 0.442"
+        },
+        {
+          "name": "start 50: simulation within 3 s.e. of V*",
+          "passed": true,
+          "detail": "gap 0.289, s.e. 0.437"
+        },
+        {
+          "name": "start 200: simulation within 3 s.e. of V*",
+          "passed": true,
+          "detail": "gap 0.573, s.e. 1.068"
+        },
+        {
+          "name": "threshold-5 policy is never better than the optimal one (exact evaluation)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "threshold-5 policy: simulation agrees with its exact value",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "threshold-30 policy is never better than the optimal one (exact evaluation)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "threshold-30 policy: simulation agrees with its exact value",
+          "passed": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {},
+      "tables": {
+        "optimal policy: simulation versus value function": [
+          {
+            "start s": 0,
+            "V*(s)": 576.67,
+            "simulated mean": 576.507,
+            "standard error": 0.443,
+            "|difference| / s.e.": 0.37
+          },
+          {
+            "start s": 13,
+            "V*(s)": 676.67,
+            "simulated mean": 676.451,
+            "standard error": 0.442,
+            "|difference| / s.e.": 0.5
+          },
+          {
+            "start s": 50,
+            "V*(s)": 1001.528,
+            "simulated mean": 1001.817,
+            "standard error": 0.437,
+            "|difference| / s.e.": 0.66
+          },
+          {
+            "start s": 200,
+            "V*(s)": 3821.586,
+            "simulated mean": 3822.159,
+            "standard error": 1.068,
+            "|difference| / s.e.": 0.54
+          }
+        ],
+        "suboptimal policies": [
+          {
+            "policy": "dispatch at \u2265 5",
+            "V^\u03c0(0) exact": 951.794,
+            "simulated": 951.934,
+            "V*(0)": 576.67
+          },
+          {
+            "policy": "dispatch at \u2265 30",
+            "V^\u03c0(0) exact": 976.108,
+            "simulated": 977.585,
+            "V*(0)": 576.67
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] start 0: simulation within 3 s.e. of V*: gap 0.163, s.e. 0.443\n  [PASS] start 13: simulation within 3 s.e. of V*: gap 0.219, s.e. 0.442\n  [PASS] start 50: simulation within 3 s.e. of V*: gap 0.289, s.e. 0.437\n  [PASS] start 200: simulation within 3 s.e. of V*: gap 0.573, s.e. 1.068\n  [PASS] threshold-5 policy is never better than the optimal one (exact evaluation)\n  [PASS] threshold-5 policy: simulation agrees with its exact value\n  [PASS] threshold-30 policy is never better than the optimal one (exact evaluation)\n  [PASS] threshold-30 policy: simulation agrees with its exact value\n",
+      "duration_s": 6.95,
+      "finished": "2026-10-26 12:34:35"
+    },
+    {
+      "name": "policy_iteration_improvement",
+      "title": "Policy iteration improves monotonically and ends at the greedy fixed point",
+      "what": "Records every policy visited by policy iteration (starting from 'never dispatch' and, separately, from 'always dispatch'), evaluates each exactly and compares consecutive value functions.",
+      "how": "The policy-improvement theorem (Lean: policy_improvement) says the greedy policy for V^\u03c0 is at least as good as \u03c0 in every state, so the sequence of value functions must be pointwise non-increasing, strictly better somewhere at each step, and both starting points must reach the same policy, which must be greedy with respect to its own values.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "each improvement step lowers the cost somewhere and raises it nowhere",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "the final policy is greedy for its own values",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "starting from 'always dispatch' reaches the same policy",
+          "passed": true,
+          "detail": "5 steps"
+        }
+      ],
+      "metrics": {
+        "improvement steps from 'never dispatch'": 6,
+        "improvement steps from 'always dispatch'": 5
+      },
+      "tables": {
+        "policies visited (from 'never dispatch')": [
+          {
+            "k": 0,
+            "threshold": null,
+            "dispatch states": 0,
+            "V^\u03c0_k(0)": 2203.913,
+            "V^\u03c0_k(200)": 8000.0,
+            "max improvement": null
+          },
+          {
+            "k": 1,
+            "threshold": 3,
+            "dispatch states": 196,
+            "V^\u03c0_k(0)": 1330.47,
+            "V^\u03c0_k(200)": 8000.0,
+            "max improvement": 4235.457
+          },
+          {
+            "k": 2,
+            "threshold": 26,
+            "dispatch states": 172,
+            "V^\u03c0_k(0)": 890.79,
+            "V^\u03c0_k(200)": 4011.371,
+            "max improvement": 4010.679
+          },
+          {
+            "k": 3,
+            "threshold": 7,
+            "dispatch states": 194,
+            "V^\u03c0_k(0)": 748.614,
+            "V^\u03c0_k(200)": 3903.353,
+            "max improvement": 249.234
+          },
+          {
+            "k": 4,
+            "threshold": 14,
+            "dispatch states": 187,
+            "V^\u03c0_k(0)": 581.581,
+            "V^\u03c0_k(200)": 3824.107,
+            "max improvement": 201.656
+          },
+          {
+            "k": 5,
+            "threshold": 13,
+            "dispatch states": 188,
+            "V^\u03c0_k(0)": 576.67,
+            "V^\u03c0_k(200)": 3821.586,
+            "max improvement": 8.858
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] each improvement step lowers the cost somewhere and raises it nowhere\n  [PASS] the final policy is greedy for its own values\n  [PASS] starting from 'always dispatch' reaches the same policy: 5 steps\n",
+      "duration_s": 0.01,
+      "finished": "2026-10-26 12:34:35"
+    },
+    {
+      "name": "cuda_kernels",
+      "title": "The CUDA kernels reproduce the solvers",
+      "what": "Runs the GPU versions of Section 2 (rl/cuda/dp.py: the state grid initialised on the device, one thread per state for the Bellman sweeps with the value function in shared memory, greedy improvement, and one thread per trajectory for Monte Carlo) and compares them with the numpy solvers. On a machine with an NVIDIA GPU this is the full 201-state problem and 100000 simulated trajectories; without one, the same kernels run in Numba's CUDA simulator on a 31-state instance (slow, so the sizes are small).",
+      "how": "The kernels implement the same equations with a different execution order (per-thread sparse sums, block-wide max reductions), so values must agree to round-off, policies and iteration counts must coincide, and the per-trajectory simulation must land within three standard errors of V*. The recorded kernel times are real only on a GPU.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "the state grid built on the device equals build_mdp (costs and transitions)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "enumeration: values agree to 1e-7 and the policies coincide",
+          "passed": true,
+          "detail": "max diff 1.36e-12"
+        },
+        {
+          "name": "value iteration: values agree to 1e-7 and the policies coincide",
+          "passed": true,
+          "detail": "max diff 9.09e-13"
+        },
+        {
+          "name": "policy iteration: values agree to 1e-7 and the policies coincide",
+          "passed": true,
+          "detail": "max diff 1.82e-12"
+        },
+        {
+          "name": "value iteration: same number of sweeps (\u00b11)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "100000 device trajectories reproduce V*(0) within 3 s.e.",
+          "passed": true,
+          "detail": "gap 0.0776, s.e. 0.0989"
+        }
+      ],
+      "metrics": {
+        "enumeration kernel time (s)": 0.4445,
+        "value iteration kernel time (s)": 0.0074,
+        "policy iteration kernel time (s)": 0.2702,
+        "simulation kernel time (s)": 1.1546,
+        "simulation grid (blocks \u00d7 threads)": "391 \u00d7 256"
+      },
+      "tables": {
+        "CPU versus device solvers": [
+          {
+            "method": "enumeration",
+            "max |V_cpu \u2212 V_gpu|": "1.36e-12",
+            "iterations cpu / gpu": "500 / 500",
+            "same policy": true,
+            "kernel": "persistent (one block, shared memory)",
+            "kernel time (s)": 0.4445
+          },
+          {
+            "method": "value iteration",
+            "max |V_cpu \u2212 V_gpu|": "9.09e-13",
+            "iterations cpu / gpu": "474 / 474",
+            "same policy": true,
+            "kernel": "persistent (one block, shared memory)",
+            "kernel time (s)": 0.0074
+          },
+          {
+            "method": "policy iteration",
+            "max |V_cpu \u2212 V_gpu|": "1.82e-12",
+            "iterations cpu / gpu": "6 / 6",
+            "same policy": true,
+            "kernel": "persistent (one block, shared memory)",
+            "kernel time (s)": 0.2702
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [
+        "backend: cuda on NVIDIA GeForce GTX 1080 (compute capability 6.1); instance: K = 15, c_f = 100, c_h = 2, A_t ~ Unif{1,\u2026,5}, max 200 waiting, \u03b3 = 0.95"
+      ],
+      "error": null,
+      "stdout": "  [PASS] the state grid built on the device equals build_mdp (costs and transitions)\n  [PASS] enumeration: values agree to 1e-7 and the policies coincide: max diff 1.36e-12\n  [PASS] value iteration: values agree to 1e-7 and the policies coincide: max diff 9.09e-13\n  [PASS] policy iteration: values agree to 1e-7 and the policies coincide: max diff 1.82e-12\n  [PASS] value iteration: same number of sweeps (\u00b11)\n  [PASS] 100000 device trajectories reproduce V*(0) within 3 s.e.: gap 0.0776, s.e. 0.0989\n",
+      "duration_s": 2.76,
+      "finished": "2026-10-26 12:34:38"
+    }
+  ]
+}

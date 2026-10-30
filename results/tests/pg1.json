@@ -1,0 +1,537 @@
+{
+  "section": "pg1",
+  "title": "Policy Gradient: Part 1",
+  "updated": "2026-10-26 12:35:40",
+  "host": "mlds-deepdish2",
+  "python": "3.10.12",
+  "tests": [
+    {
+      "name": "analytic_gradient",
+      "title": "The implemented gradient equals the analytic policy gradient",
+      "what": "For a linear softmax policy, compares the gradient PyTorch computes from the surrogate loss with the closed form \u2212\u03a3_t G_t (e_{a_t} \u2212 \u03c0(\u00b7|s_t)) \u2297 s_t, on single-step bandit episodes with random logits and on multi-step corridor episodes.",
+      "how": "REINFORCE's update is \u03a3_t \u2207log \u03c0(a_t|s_t) G_t and the score of a softmax is e_a \u2212 \u03c0, so the two must agree to floating-point precision for every action and return; a sign error, a missing return, or a wrong time alignment would show up immediately.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "single-step gradients match the closed form to 1e-6",
+          "passed": true,
+          "detail": "max difference 1.8e-07"
+        },
+        {
+          "name": "multi-step gradients (returns-to-go, several states) match the closed form to 1e-5",
+          "passed": true,
+          "detail": "8.3e-08"
+        }
+      ],
+      "metrics": {
+        "max |autograd \u2212 analytic| (multi-step)": 8.276624141601019e-08
+      },
+      "tables": {
+        "bandit: autograd versus closed form": [
+          {
+            "action": 0,
+            "return G": -2.0,
+            "autograd \u2202L/\u2202b": [
+              0.8969100117683411,
+              -0.6917499899864197,
+              -0.20514999330043793
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              0.89691,
+              -0.69175,
+              -0.20515
+            ],
+            "max |diff|": "1.2e-07"
+          },
+          {
+            "action": 0,
+            "return G": 0.5,
+            "autograd \u2202L/\u2202b": [
+              -0.22423000633716583,
+              0.17294000089168549,
+              0.05129000172019005
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              -0.22423,
+              0.17294,
+              0.05129
+            ],
+            "max |diff|": "3.0e-08"
+          },
+          {
+            "action": 0,
+            "return G": 3.0,
+            "autograd \u2202L/\u2202b": [
+              -1.3453600406646729,
+              1.0376299619674683,
+              0.3077299892902374
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              -1.34536,
+              1.03763,
+              0.30773
+            ],
+            "max |diff|": "1.8e-07"
+          },
+          {
+            "action": 1,
+            "return G": -2.0,
+            "autograd \u2202L/\u2202b": [
+              -1.1030900478363037,
+              1.3082499504089355,
+              -0.20514999330043793
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              -1.10309,
+              1.30825,
+              -0.20515
+            ],
+            "max |diff|": "1.8e-07"
+          },
+          {
+            "action": 1,
+            "return G": 0.5,
+            "autograd \u2202L/\u2202b": [
+              0.27577000856399536,
+              -0.3270600140094757,
+              0.05129000172019005
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              0.27577,
+              -0.32706,
+              0.05129
+            ],
+            "max |diff|": "4.5e-08"
+          },
+          {
+            "action": 1,
+            "return G": 3.0,
+            "autograd \u2202L/\u2202b": [
+              1.6546399593353271,
+              -1.9623700380325317,
+              0.3077299892902374
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              1.65464,
+              -1.96237,
+              0.30773
+            ],
+            "max |diff|": "1.8e-07"
+          },
+          {
+            "action": 2,
+            "return G": -2.0,
+            "autograd \u2202L/\u2202b": [
+              -1.1030900478363037,
+              -0.6917499899864197,
+              1.7948499917984009
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              -1.10309,
+              -0.69175,
+              1.79485
+            ],
+            "max |diff|": "1.2e-07"
+          },
+          {
+            "action": 2,
+            "return G": 0.5,
+            "autograd \u2202L/\u2202b": [
+              0.27577000856399536,
+              0.17294000089168549,
+              -0.44870999455451965
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              0.27577,
+              0.17294,
+              -0.44871
+            ],
+            "max |diff|": "3.0e-08"
+          },
+          {
+            "action": 2,
+            "return G": 3.0,
+            "autograd \u2202L/\u2202b": [
+              1.6546399593353271,
+              1.0376299619674683,
+              -2.692270040512085
+            ],
+            "analytic \u2212G(e_a \u2212 \u03c0)": [
+              1.65464,
+              1.03763,
+              -2.69227
+            ],
+            "max |diff|": "1.8e-07"
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] single-step gradients match the closed form to 1e-6: max difference 1.8e-07\n  [PASS] multi-step gradients (returns-to-go, several states) match the closed form to 1e-5: 8.3e-08\n",
+      "duration_s": 0.1,
+      "finished": "2026-10-26 12:34:38"
+    },
+    {
+      "name": "bandits",
+      "title": "Bandits: the policy concentrates on the better arm",
+      "what": "Trains the policy on one-step problems: a deterministic two-armed bandit with rewards \u22121 and +1, a Bernoulli bandit with success probabilities 0.3 and 0.7, and a three-armed bandit with positive rewards 0, 1 and 0.5 (10 seeds).",
+      "how": "Without state or sequence effects, REINFORCE is plain stochastic gradient ascent on E[r], so the probability of the best arm must approach 1 in the first two problems. The third problem documents a known weakness that motivates Part 2: with positive-only rewards and no baseline, every sampled arm is reinforced, so some seeds lock onto the 0.5 arm sampled early; the fraction that still finds the best arm is recorded (and compared with baselines in the Part 2 experiments).",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "deterministic \u00b11 bandit: P(best arm) > 0.95 after 150 episodes",
+          "passed": true,
+          "detail": "1.0000"
+        },
+        {
+          "name": "Bernoulli bandit: P(best arm) > 0.8 after 400 episodes",
+          "passed": true,
+          "detail": "0.9998"
+        }
+      ],
+      "metrics": {
+        "P(best arm), rewards \u00b11": 1.0,
+        "P(best arm), Bernoulli 0.3/0.7": 0.9997755885124207,
+        "positive-only rewards: seeds finding the best arm (of 10)": 6
+      },
+      "tables": {},
+      "figures": [
+        "results/tests/pg1/bandits/bandits.png"
+      ],
+      "notes": [
+        "Positive-only three-armed bandit without baseline: 6/10 seeds found the best arm; the others locked onto the 0.5 arm."
+      ],
+      "error": null,
+      "stdout": "  [PASS] deterministic \u00b11 bandit: P(best arm) > 0.95 after 150 episodes: 1.0000\n  [PASS] Bernoulli bandit: P(best arm) > 0.8 after 400 episodes: 0.9998\n",
+      "duration_s": 7.34,
+      "finished": "2026-10-26 12:34:46"
+    },
+    {
+      "name": "corridor_vs_dp",
+      "title": "REINFORCE reaches the optimum computed by value iteration (corridor)",
+      "what": "A corridor of 6 cells with the reward at the end (deterministic, and with a 20% chance that a move is reversed). The exact optimal policy and value come from the Section 2 solvers on the same MDP; REINFORCE is trained for 400 episodes and its greedy policy is evaluated exactly on the MDP.",
+      "how": "Two independent implementations must agree: the greedy policy extracted from the trained network must be 'always right' (the DP optimum), its exact value must equal the DP optimal value, and in the deterministic case the discounted return of a greedy rollout must be \u03b3^(L\u22122) exactly. The stochastic policy's own average return must be close to the optimum once the per-state probabilities of 'right' are near 1.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "slip 0.0: greedy policy from the network equals the DP optimal policy",
+          "passed": true,
+          "detail": "greedy [1, 1, 1, 1, 1], optimal [1, 1, 1, 1, 1]"
+        },
+        {
+          "name": "slip 0.0: exact value of the greedy policy = DP optimum",
+          "passed": true,
+          "detail": "max |actual - expected| = 0 (tolerance 1e-09)"
+        },
+        {
+          "name": "slip 0.0: stochastic policy within 10% of the optimum",
+          "passed": true,
+          "detail": "0.6561 vs 0.6561"
+        },
+        {
+          "name": "deterministic corridor: greedy rollout return = \u03b3^(L\u22122)",
+          "passed": true,
+          "detail": "max |actual - expected| = 1.11e-16 (tolerance 1e-09)"
+        },
+        {
+          "name": "slip 0.2: greedy policy from the network equals the DP optimal policy",
+          "passed": true,
+          "detail": "greedy [1, 1, 1, 1, 1], optimal [1, 1, 1, 1, 1]"
+        },
+        {
+          "name": "slip 0.2: exact value of the greedy policy = DP optimum",
+          "passed": true,
+          "detail": "max |actual - expected| = 1.55e-12 (tolerance 1e-09)"
+        },
+        {
+          "name": "slip 0.2: stochastic policy within 10% of the optimum",
+          "passed": true,
+          "detail": "0.5064 vs 0.5132"
+        }
+      ],
+      "metrics": {
+        "optimal value (slip 0.0)": 0.6561000000000001,
+        "optimal value (slip 0.2)": 0.5131669013297059
+      },
+      "tables": {
+        "corridor results": [
+          {
+            "slip": 0.0,
+            "DP optimal value from start": 0.6561,
+            "greedy policy value (exact)": 0.6561,
+            "stochastic policy value (300 rollouts)": "0.6561 \u00b1 0.0000",
+            "P(right) per state": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "slip": 0.2,
+            "DP optimal value from start": 0.5132,
+            "greedy policy value (exact)": 0.5132,
+            "stochastic policy value (300 rollouts)": "0.5064 \u00b1 0.0082",
+            "P(right) per state": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "figures": [
+        "results/tests/pg1/corridor_vs_dp/corridor_learning_curve.png"
+      ],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] slip 0.0: greedy policy from the network equals the DP optimal policy: greedy [1, 1, 1, 1, 1], optimal [1, 1, 1, 1, 1]\n  [PASS] slip 0.0: exact value of the greedy policy = DP optimum: max |actual - expected| = 0 (tolerance 1e-09)\n  [PASS] slip 0.0: stochastic policy within 10% of the optimum: 0.6561 vs 0.6561\n  [PASS] deterministic corridor: greedy rollout return = \u03b3^(L\u22122): max |actual - expected| = 1.11e-16 (tolerance 1e-09)\n  [PASS] slip 0.2: greedy policy from the network equals the DP optimal policy: greedy [1, 1, 1, 1, 1], optimal [1, 1, 1, 1, 1]\n  [PASS] slip 0.2: exact value of the greedy policy = DP optimum: max |actual - expected| = 1.55e-12 (tolerance 1e-09)\n  [PASS] slip 0.2: stochastic policy within 10% of the optimum: 0.5064 vs 0.5132\n",
+      "duration_s": 4.07,
+      "finished": "2026-10-26 12:34:50"
+    },
+    {
+      "name": "discount_factor",
+      "title": "The discount factor decides whether a delayed reward is worth pursuing",
+      "what": "A 5-cell corridor where every move to the right costs 0.1 and the goal pays 1. For \u03b3 \u2208 {0, 0.5, 0.9, 0.99} the Section 2 solvers give the exact optimal policy of the corresponding MDP (go right from the start or not), and REINFORCE is trained with the same \u03b3 (3 seeds, 300 episodes); the success rate at the end of training is compared with what the optimal policy does. Also checks the return weights of one episode.",
+      "how": "With \u03b3 = 0 only the immediate reward counts, so moving right (\u22120.1) is never worth it and the optimal agent stays at the start; with \u03b3 = 0.9 the discounted goal reward outweighs the move costs. Value iteration says exactly which \u03b3 flip the decision, and REINFORCE trained with each \u03b3 must reproduce that decision: near-zero success where the optimum is to stay, near-certain success where it is to go. This isolates the discount factor from every other part of the algorithm.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "\u03b3 = 0: weights are (0, 0, 0, 0, 0, 1)",
+          "passed": true,
+          "detail": "max |actual - expected| = 0 (tolerance 1e-12)"
+        },
+        {
+          "name": "\u03b3 = 0.9: weights are 0.9^(5\u2212t)",
+          "passed": true,
+          "detail": "max |actual - expected| = 1.11e-16 (tolerance 1e-12)"
+        },
+        {
+          "name": "value iteration: staying is optimal for \u03b3 = 0 and going is optimal for \u03b3 = 0.9",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "\u03b3 = 0.0: REINFORCE learns to stay (\u2264 20% success)",
+          "passed": true,
+          "detail": "0.00"
+        }
+      ],
+      "metrics": {
+        "success rate (\u03b3 = 0.0)": 0.0,
+        "success rate (\u03b3 = 0.5)": 0.3333333333333333,
+        "success rate (\u03b3 = 0.9)": 1.0,
+        "success rate (\u03b3 = 0.99)": 1.0
+      },
+      "tables": {
+        "optimal decision versus learned behaviour": [
+          {
+            "\u03b3": 0.0,
+            "optimal first move (value iteration)": "stay",
+            "value of 'stay' at the start": -0.0,
+            "value of 'go right' at the start": -0.1,
+            "REINFORCE success rate, last 50 episodes (3 seeds)": 0.0,
+            "per seed": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "\u03b3": 0.5,
+            "optimal first move (value iteration)": "stay",
+            "value of 'stay' at the start": -0.0,
+            "value of 'go right' at the start": -0.0625,
+            "REINFORCE success rate, last 50 episodes (3 seeds)": 0.333,
+            "per seed": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "\u03b3": 0.9,
+            "optimal first move (value iteration)": "go right",
+            "value of 'stay' at the start": 0.3466,
+            "value of 'go right' at the start": 0.3851,
+            "REINFORCE success rate, last 50 episodes (3 seeds)": 1.0,
+            "per seed": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "\u03b3": 0.99,
+            "optimal first move (value iteration)": "go right",
+            "value of 'stay' at the start": 0.5705,
+            "value of 'go right' at the start": 0.5763,
+            "REINFORCE success rate, last 50 episodes (3 seeds)": 1.0,
+            "per seed": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [
+        "\u03b3 = 0.5 is a marginal case (the two first moves differ by only 0.063 in value), so the learned success rate of 0.33 is recorded without a pass/fail check.",
+        "\u03b3 = 0.9 is a marginal case (the two first moves differ by only 0.039 in value), so the learned success rate of 1.00 is recorded without a pass/fail check.",
+        "\u03b3 = 0.99 is a marginal case (the two first moves differ by only 0.006 in value), so the learned success rate of 1.00 is recorded without a pass/fail check."
+      ],
+      "error": null,
+      "stdout": "  [PASS] \u03b3 = 0: weights are (0, 0, 0, 0, 0, 1): max |actual - expected| = 0 (tolerance 1e-12)\n  [PASS] \u03b3 = 0.9: weights are 0.9^(5\u2212t): max |actual - expected| = 1.11e-16 (tolerance 1e-12)\n  [PASS] value iteration: staying is optimal for \u03b3 = 0 and going is optimal for \u03b3 = 0.9\n  [PASS] \u03b3 = 0.0: REINFORCE learns to stay (\u2264 20% success): 0.00\n",
+      "duration_s": 18.69,
+      "finished": "2026-10-26 12:35:08"
+    },
+    {
+      "name": "reward_to_go",
+      "title": "Three ways to weight the log-probabilities: which agree in expectation",
+      "what": "With a fixed random policy on a stochastic corridor that charges 0.05 per step (so rewards arrive at every step, not only at the goal), draws 600 single-episode gradient estimates for three weightings of \u2207log \u03c0(a_t|s_t): the whole-episode return G_0 (classic REINFORCE), \u03b3^t\u00b7G_t (the exact gradient of the discounted objective, `--set discount_grad=true`) and the reward-to-go G_t without the \u03b3^t factor (the implementation's default, as in most practical code), and compares means and variances.",
+      "how": "Rewards earned before step t are independent of a_t given the history, so dropping them does not change the expectation: the G_0 and \u03b3^t\u00b7G_t estimates must have the same mean within sampling error, and here the \u03b3^t\u00b7G_t weights are pointwise smaller, so its variance must be lower. The default G_t weighting drops the \u03b3^t factor and therefore estimates a slightly different gradient (it treats every visited state as a start state); the experiment records that difference so the choice is a documented one.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "G_0 and \u03b3^t\u00b7G_t have the same mean (within 4 s.e. in every coordinate)",
+          "passed": true,
+          "detail": "max z = 0.41"
+        },
+        {
+          "name": "\u03b3^t\u00b7G_t has lower total variance than G_0",
+          "passed": true,
+          "detail": "0.5296 < 0.9527"
+        }
+      ],
+      "metrics": {
+        "max |z|: G_0 vs \u03b3^t G_t": 0.41499367356300354,
+        "max |z|: G_0 vs G_t": 7.645491123199463,
+        "variance ratio \u03b3^t G_t / G_0": 0.5559271013823749
+      },
+      "tables": {
+        "gradient estimates (600 episodes each)": [
+          {
+            "weighting": "whole-episode return G_0",
+            "mean \u2016g\u2016": 0.3941,
+            "total variance": 0.9527,
+            "max |z| vs G_0": 0.0
+          },
+          {
+            "weighting": "\u03b3^t \u00b7 G_t (exact discounted gradient)",
+            "mean \u2016g\u2016": 0.4042,
+            "total variance": 0.5296,
+            "max |z| vs G_0": 0.41
+          },
+          {
+            "weighting": "reward-to-go G_t (default)",
+            "mean \u2016g\u2016": 0.7827,
+            "total variance": 1.4763,
+            "max |z| vs G_0": 7.65
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [
+        "The default reward-to-go weighting differs from G_0 in expectation (max z = 7.6): it is the usual practical estimator, equal to the exact discounted gradient only when \u03b3 = 1."
+      ],
+      "error": null,
+      "stdout": "  [PASS] G_0 and \u03b3^t\u00b7G_t have the same mean (within 4 s.e. in every coordinate): max z = 0.41\n  [PASS] \u03b3^t\u00b7G_t has lower total variance than G_0: 0.5296 < 0.9527\n",
+      "duration_s": 6.61,
+      "finished": "2026-10-26 12:35:15"
+    },
+    {
+      "name": "cartpole_short",
+      "title": "CartPole-v1 learns within 200 episodes on the CPU",
+      "what": "Trains with the handout's settings (Adam, learning rate 0.01, \u03b3 = 0.95) for 300 episodes, seed 0, then evaluates 50 episodes; records the mean reward of the first 20 and of the last 50 training episodes.",
+      "how": "A correct REINFORCE implementation improves CartPole quickly: the last 50 episodes must average at least 1.5 times the first 20 and at least 100 steps, and the evaluation mean must exceed 50 (random play lasts about 22). The full 1000-episode run and its plots are produced by `python run.py pg --part 1 --env cartpole`.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "the last 50 episodes average \u2265 1.5 \u00d7 the first 20 and \u2265 100 steps",
+          "passed": true,
+          "detail": "43.2 \u2192 206.1"
+        },
+        {
+          "name": "evaluation mean > 50 steps",
+          "passed": true,
+          "detail": "360.9"
+        }
+      ],
+      "metrics": {
+        "mean reward, episodes 1-20": 43.2,
+        "mean reward, episodes 251-300": 206.12,
+        "evaluation mean (50 episodes)": 360.86,
+        "evaluation std": 44.9942262962705,
+        "training time (s)": 18.3
+      },
+      "tables": {},
+      "figures": [
+        "results/tests/pg1/cartpole_short/cartpole_300.png"
+      ],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] the last 50 episodes average \u2265 1.5 \u00d7 the first 20 and \u2265 100 steps: 43.2 \u2192 206.1\n  [PASS] evaluation mean > 50 steps: 360.9\n",
+      "duration_s": 23.59,
+      "finished": "2026-10-26 12:35:39"
+    },
+    {
+      "name": "pong_pipeline",
+      "title": "Pong-v5 pipeline: preprocessing and the two-action restriction",
+      "what": "Plays one full game of ALE/Pong-v5 with an untrained policy, recording every action sent to the environment and statistics of the preprocessed frame differences the network sees.",
+      "how": "The handout restricts the agent to RIGHT (2) and LEFT (3): every recorded action must be one of them. The preprocessed input must be an 80\u00d780 image with values in {\u22121, 0, 1} (frame difference of binary frames) that is non-zero most of the time (the ball and paddles move), and a game must end with a score between \u221221 and 21 (an untrained agent loses almost every point).",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "only actions 2 (RIGHT) and 3 (LEFT) were sent to the environment",
+          "passed": true,
+          "detail": "actions used: [2, 3]"
+        },
+        {
+          "name": "both actions were used",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "inputs are 6400-dimensional with values in {\u22121, 0, 1}",
+          "passed": true,
+          "detail": "values [-1.0, 0.0, 1.0]"
+        },
+        {
+          "name": "most frame differences are non-zero",
+          "passed": true,
+          "detail": "98.81%"
+        },
+        {
+          "name": "the score is between \u221221 and 21 and the game ended",
+          "passed": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "steps in the game": 921,
+        "game score (reward sum)": -20.0,
+        "fraction of frame differences with any non-zero pixel": 0.988056460369164,
+        "seconds per step (CPU, untrained MLP)": 0.001
+      },
+      "tables": {},
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] only actions 2 (RIGHT) and 3 (LEFT) were sent to the environment: actions used: [2, 3]\n  [PASS] both actions were used\n  [PASS] inputs are 6400-dimensional with values in {\u22121, 0, 1}: values [-1.0, 0.0, 1.0]\n  [PASS] most frame differences are non-zero: 98.81%\n  [PASS] the score is between \u221221 and 21 and the game ended\n",
+      "duration_s": 1.1,
+      "finished": "2026-10-26 12:35:40"
+    }
+  ]
+}

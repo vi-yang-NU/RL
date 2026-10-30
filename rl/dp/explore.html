@@ -1,0 +1,923 @@
+<!doctype html>
+<html lang="en"__THEME_ATTR__>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shuttle Dispatch Explorer</title>
+<style>
+/* Layout: a column of panels. The two-station scene with its summary tiles and controls comes first, then
+   the period table beside the algorithm stepper, then the three charts (one column under 720px). */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;          /* Streamlit's page background, so the embedded page blends in */
+  --surface: #fcfcfb;     /* chart surface */
+  --card: #f4f5f7;        /* panels, platforms */
+  --card-2: #e9ebef;      /* hover rows, pressed controls */
+  --line: #e1e0d9;        /* hairlines, empty seats, "do not dispatch" band */
+  --axis: #c3c2b7;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --blue: #2a78d6;        /* series 1: the optimal policy / values, occupied seats */
+  --blue-soft: #cde2fb;
+  --orange: #eb6834;      /* series 2: the algorithm's k-th step, new arrivals */
+  --aqua: #1baf7a;        /* series 3: passengers delivered this period */
+  --good: #0ca30c;
+  --critical: #d03b3b;
+  --focus: #2a78d6;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e1117; --surface: #1a1a19; --card: #1f2229; --card-2: #2b2f38; --line: #2c2c2a; --axis: #383835;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --blue: #3987e5; --blue-soft: #1c3a66; --orange: #d95926;
+    --aqua: #199e70; --good: #0ca30c; --critical: #e66767; --focus: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1117; --surface: #1a1a19; --card: #1f2229; --card-2: #2b2f38; --line: #2c2c2a; --axis: #383835;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --blue: #3987e5; --blue-soft: #1c3a66; --orange: #d95926;
+  --aqua: #199e70; --good: #0ca30c; --critical: #e66767; --focus: #3987e5;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); }
+body { padding-block: 4px 12px; padding-left: max(2px, env(safe-area-inset-left, 0px)); padding-right: max(2px, env(safe-area-inset-right, 0px)); }
+.explorer { display: flex; flex-direction: column; gap: 12px; max-width: 1180px; }
+h2, h3, p { margin: 0; }
+h2 { font-size: 15px; font-weight: 600; }
+h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.panel { background: var(--card); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.panel > h3 { margin-bottom: 8px; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.head .desc { color: var(--ink-2); }
+.head .src { color: var(--muted); font-size: 12px; }
+.muted { color: var(--muted); }
+.ink2 { color: var(--ink-2); }
+.num { font-variant-numeric: tabular-nums; }
+svg text { font-family: var(--font); fill: var(--ink-2); }
+
+/* scene */
+#scene { display: block; width: 100%; height: auto; max-width: 100%; }
+#scene .slab { fill: var(--card-2); }
+#scene .track { stroke: var(--axis); stroke-width: 3; }
+#scene .station { font-size: 13px; font-weight: 600; fill: var(--ink); }
+#scene .sub { font-size: 12px; fill: var(--ink-2); }
+#scene .note { font-size: 12px; fill: var(--ink-2); font-style: italic; }
+#scene .p { fill: var(--ink-2); }
+#scene .p.new { fill: var(--orange); animation: pop 420ms ease-out; }
+#scene #crowdB .p { fill: var(--muted); }
+#scene #crowdB .p.new { fill: var(--aqua); }
+#scene .bus { fill: var(--surface); stroke: var(--ink-2); stroke-width: 1.5; }
+#scene .bus-win { fill: var(--blue-soft); }
+#scene .seat { fill: var(--line); }
+#scene .seat.on { fill: var(--blue); }
+#scene .wheel { fill: var(--ink-2); }
+#scene .bus-label { font-size: 11px; fill: var(--ink); }
+#scene .load-bar { fill: var(--blue); }
+#scene .load-track { fill: var(--line); }
+#shuttle { transition: transform 650ms ease-in-out; transform: translateX(0); }
+#shuttle.at-B { transform: translateX(430px); }
+@keyframes pop { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #shuttle { transition: none; } #scene .p.new { animation: none; } }
+.no-motion #shuttle { transition: none; }
+
+/* summary tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 6px; }
+.tile { background: var(--surface); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.tile .lab { font-size: 11px; color: var(--muted); }
+.tile .val { font-size: 20px; font-weight: 600; line-height: 1.2; margin-top: 2px; overflow-wrap: anywhere; }
+.tile .val.small { font-size: 15px; }
+.tile .sub { font-size: 11px; color: var(--ink-2); margin-top: 2px; overflow-wrap: anywhere; }
+.tile.over .val { color: var(--critical); }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.group > span.lab { color: var(--muted); font-size: 12px; }
+button, select, input[type="number"] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { background: var(--card-2); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--blue); }
+button.act { border-color: var(--axis); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+input[type="number"] { width: 72px; }
+input[type="range"] { accent-color: var(--blue); }
+.pill { border-radius: 999px; padding: 3px 10px; }
+.pill[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.pill[aria-pressed="true"]:hover { background: var(--ink); }
+.hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+/* middle row */
+.row2 { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+@media (max-width: 860px) { .row2 { grid-template-columns: 1fr; } }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { padding: 3px 7px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+th { color: var(--muted); font-weight: 500; font-size: 11px; }
+th:first-child, td:first-child { text-align: left; }
+tr.cur td { background: var(--card-2); }
+tr.pending td { color: var(--ink-2); font-style: italic; }
+tr.pick { cursor: pointer; }
+tr.pick:hover td { background: var(--card-2); }
+td.over { color: var(--critical); font-weight: 600; }
+.sums { font-size: 12px; color: var(--ink-2); margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.sums b { color: var(--ink); font-weight: 600; }
+.stepper { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.stepper input[type="range"] { flex: 1 1 120px; min-width: 80px; }
+.summary { font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.error { color: var(--critical); font-size: 12px; }
+
+/* charts */
+.charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 720px) { .charts { grid-template-columns: 1fr; } }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { stroke: var(--axis); stroke-width: 1; }
+.chart .tick { font-size: 10px; fill: var(--muted); }
+.chart .lbl { font-size: 11px; fill: var(--ink-2); }
+.chart .s1 { fill: none; stroke: var(--blue); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .s2 { fill: none; stroke: var(--orange); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .s1.area { fill: var(--blue); fill-opacity: 0.08; stroke: none; }
+.chart .m1 { fill: var(--blue); stroke: var(--surface); stroke-width: 2; }
+.chart .m2 { fill: var(--orange); stroke: var(--surface); stroke-width: 2; }
+.chart .m1.big { r: 6; }
+.chart .m2.big { r: 6; }
+.chart .mark { fill: var(--blue); stroke: var(--surface); stroke-width: 2; }
+.chart .cross { stroke: var(--axis); stroke-width: 1; }
+.chart .tol { stroke: var(--muted); stroke-width: 1; }
+.chart .band0 { fill: var(--axis); }
+.chart .band1 { fill: var(--blue); }
+.chart .band1.alt { fill: var(--orange); }
+.chart .band-2 { fill: var(--blue-soft); }
+.chart .band-3 { fill: var(--blue); }
+.chart .band-4 { fill: #1c5cab; }
+.chart .band-5 { fill: #0d366b; }
+.chart .band-2.alt { fill: #fbd0bd; } .chart .band-3.alt { fill: var(--orange); } .chart .band-4.alt { fill: #b4401a; } .chart .band-5.alt { fill: #7a2a0f; }
+.chart .thr { stroke: var(--ink); stroke-width: 1; }
+.chart .hit { fill: transparent; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--ink-2); margin-bottom: 4px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
+.legend i.k1 { background: var(--blue); } .legend i.k2 { background: var(--orange); } .legend i.k0 { background: var(--axis); }
+.tip { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; pointer-events: none; max-width: 70%; text-align: right; }
+.tip[hidden] { display: none; }
+details { font-size: 12px; }
+summary { cursor: pointer; color: var(--ink-2); }
+details .scroll { max-height: 280px; overflow: auto; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="explorer" id="explorer">
+  <div class="head">
+    <h2>Two stations, one shuttle: the first 10 periods</h2>
+    <span class="desc" id="desc"></span>
+    <span class="src" id="src"></span>
+  </div>
+
+  <section class="panel" id="scenePanel">
+    <svg id="scene" viewBox="0 0 1000 256" role="img" aria-label="Customers waiting at Station A, the shuttle, and customers delivered to Station B"></svg>
+    <div class="tiles" id="tiles"></div>
+    <div class="controls">
+      <div class="group">
+        <button id="btnStep" class="primary" title="Take the policy's action for this period">Step ▶</button>
+        <button id="btnPlay" title="Play the remaining periods">Play</button>
+        <button id="btnBack" title="Undo the last period">◀ Back</button>
+        <button id="btnReset">Reset</button>
+      </div>
+      <div class="group" id="overrideGroup"><span class="lab">or take instead:</span></div>
+      <div class="group">
+        <span class="lab">policy</span>
+        <select id="selPolicy"></select>
+        <span id="thetaWrap" hidden><input type="range" id="theta" min="0" step="1"> <span class="num" id="thetaVal"></span></span>
+      </div>
+      <div class="group">
+        <span class="lab">start state</span><input type="number" id="inpStart" min="0" step="1">
+        <span class="lab">seed</span><input type="number" id="inpSeed" min="0" step="1">
+        <span class="lab">speed</span>
+        <select id="selSpeed"><option value="0.5">slow</option><option value="1" selected>normal</option><option value="2.5">fast</option><option value="0">instant</option></select>
+      </div>
+    </div>
+    <p class="hint" id="hint"></p>
+  </section>
+
+  <div class="row2">
+    <section class="panel">
+      <h3>Period by period</h3>
+      <div class="scroll"><table id="stepsTable"></table></div>
+      <div class="sums" id="sums"></div>
+    </section>
+    <section class="panel">
+      <h3>The algorithm's first steps</h3>
+      <div class="group" id="methodPills"></div>
+      <p class="summary" id="methodSummary"></p>
+      <div class="stepper">
+        <button id="kPrev">◀</button>
+        <span class="num" id="kLabel"></span>
+        <button id="kNext">▶</button>
+        <input type="range" id="kRange" min="0" step="1">
+      </div>
+      <div class="scroll"><table id="algoTable"></table></div>
+      <p class="hint" id="algoHint"></p>
+    </section>
+  </div>
+
+  <div class="charts">
+    <section class="panel chart">
+      <h3>Value function</h3>
+      <div class="legend" id="legValue"></div>
+      <svg id="chartValue" viewBox="0 0 360 220"></svg>
+      <div class="tip" id="tipValue" hidden></div>
+    </section>
+    <section class="panel chart">
+      <h3>Policy</h3>
+      <div class="legend" id="legPolicy"></div>
+      <svg id="chartPolicy" viewBox="0 0 360 220"></svg>
+      <div class="tip" id="tipPolicy" hidden></div>
+    </section>
+    <section class="panel chart">
+      <h3 id="convTitle">Convergence</h3>
+      <div class="legend" id="legConv"></div>
+      <svg id="chartConv" viewBox="0 0 360 220"></svg>
+      <div class="tip" id="tipConv" hidden></div>
+    </section>
+  </div>
+
+  <details class="panel">
+    <summary>Values table: V*(s), the optimal action, Q*(s, ·) and the algorithm step shown in the charts</summary>
+    <div class="scroll"><table id="valuesTable"></table></div>
+  </details>
+</div>
+
+<script>
+__ENGINE__
+</script>
+<script>
+const DATA = __DATA__;
+</script>
+<script>
+(function () {
+  "use strict";
+  const E = window.ExploreEngine;
+  const P = DATA.problem, M = DATA.mdp, OPT = DATA.optimal, METHODS = DATA.methods;
+  const nS = M.n_states, nA = M.n_actions, STEPS = DATA.steps, GAMMA = M.gamma;
+  const LABELS = M.action_labels;
+  const SHORT = LABELS.map(function (l) { return l === "Do not dispatch" ? "Wait" : l; });
+  const METHOD_ORDER = ["enumeration", "value_iteration", "policy_iteration"];
+  const $ = function (id) { return document.getElementById(id); };
+  const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+  // Inside the dashboard this page is a same-origin iframe: follow the dashboard's own theme, not the browser's
+  // preference (Streamlit may be light while the OS is dark, or the reverse, and the theme can be switched in its
+  // menu without a rerun). Standalone there is no parent and the page keeps data-theme / prefers-color-scheme.
+  function syncThemeWithParent() {
+    try {
+      if (window.parent === window) return;
+      const doc = window.parent.document;
+      const candidates = [doc.querySelector('[data-testid="stApp"]'), doc.body, doc.documentElement];
+      for (let i = 0; i < candidates.length; i++) {
+        if (!candidates[i]) continue;
+        const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/.exec(window.parent.getComputedStyle(candidates[i]).backgroundColor);
+        if (!m || (m[4] !== undefined && Number(m[4]) === 0)) continue;   // transparent: look further up
+        const luminance = 0.2126 * Number(m[1]) + 0.7152 * Number(m[2]) + 0.0722 * Number(m[3]);
+        document.documentElement.setAttribute("data-theme", luminance < 128 ? "dark" : "light");
+        return;
+      }
+    } catch (e) { /* a different origin: keep what the server chose */ }
+  }
+  syncThemeWithParent();
+  window.setInterval(syncThemeWithParent, 1500);
+
+  function fmt(x, d) {
+    if (x === null || x === undefined || Number.isNaN(x)) return "–";
+    d = d === undefined ? 2 : d;
+    return Number(x).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+  }
+  function fmtG(x) {
+    if (x === null || x === undefined) return "–";
+    if (x === 0) return "0";
+    return Math.abs(x) >= 0.01 ? fmt(x, 3) : Number(x).toExponential(2).replace(/\.?0+e/, "e");
+  }
+  function compact(x) {
+    if (Math.abs(x) >= 1000) { const k = x / 1000; return (Number.isInteger(k) || Math.abs(x) >= 10000 ? k.toFixed(0) : k.toFixed(1)) + "K"; }
+    return Number.isInteger(x) ? String(x) : x.toFixed(1);
+  }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function sup(t) { return t === 0 ? "" : t === 1 ? "γ" : "γ^" + t; }
+
+  /* ---------------- state ---------------- */
+  const firstOk = METHOD_ORDER.filter(function (m) { return METHODS[m].steps; });
+  const S = {
+    method: METHODS.value_iteration.steps ? "value_iteration" : (firstOk[0] || "enumeration"),
+    k: 0, source: "optimal", theta: OPT.threshold === null ? nS : OPT.threshold,
+    start: 0, seed: 7, speed: 1, playing: false, busy: false,
+  };
+  S.k = METHODS[S.method].steps ? METHODS[S.method].steps.length - 1 : 0;
+
+  function methodSteps() { return METHODS[S.method].steps || null; }
+  function currentStep() { const st = methodSteps(); return st ? st[Math.min(S.k, st.length - 1)] : null; }
+  function optimalPolicy(t, s) { return OPT.policy[s]; }
+  function policyFn() {
+    switch (S.source) {
+      case "method": {
+        const st = currentStep();
+        const pol = st && st.policy;
+        return pol ? function (t, s) { return pol[s]; } : function () { return 0; };
+      }
+      case "horizon": {
+        const fp = METHODS.enumeration.first_periods;
+        return function (t, s) { return t < fp.length ? fp[t].policy[s] : 0; };
+      }
+      case "wait": return function () { return 0; };
+      case "dispatch": return function () { return nA - 1; };
+      case "threshold": return function (t, s) { return s >= S.theta ? Math.min(1, nA - 1) : 0; };
+      default: return optimalPolicy;
+    }
+  }
+  function policyName() {
+    switch (S.source) {
+      case "method": return METHODS[S.method].label + ", step " + S.k;
+      case "horizon": return "finite horizon T = " + P.horizon + " (π with T − t periods to go)";
+      case "wait": return "never dispatch";
+      case "dispatch": return "always dispatch";
+      case "threshold": return "dispatch when s ≥ " + S.theta;
+      default: return "optimal policy π*";
+    }
+  }
+  const tables = { gamma: GAMMA, cost: M.cost, succ: M.succ };
+  const walk = new E.Walk(tables, { start: S.start, seed: S.seed, maxSteps: STEPS, policy: policyFn() });
+  const shadow = new E.Walk(tables, { start: S.start, seed: S.seed, maxSteps: STEPS, policy: optimalPolicy });
+  function resetWalk() {
+    animToken++;
+    S.busy = false; S.playing = false;
+    walk.configure({ start: S.start, seed: S.seed, policy: policyFn(), horizon: S.source === "horizon" ? P.horizon : Infinity, maxSteps: STEPS });
+    shadow.configure({ start: S.start, seed: S.seed, maxSteps: STEPS, horizon: walk.horizon, policy: optimalPolicy });
+    renderAll();
+  }
+
+  /* ---------------- the two-station scene (shuttle problem) ---------------- */
+  function layoutFor(w, h, need) {
+    let f = 1;
+    for (;;) {
+      const cols = Math.floor(w / (14 * f)), rows = Math.floor(h / (19 * f));
+      if (cols * rows >= need || f <= 0.2) return { f: f, cols: cols, rows: rows };
+      f = Math.round((f - 0.05) * 100) / 100;
+    }
+  }
+  function crowdSvg(x0, y0, w, h, n, nNew, lay, empty) {
+    const cw = 14 * lay.f, ch = 19 * lay.f, gw = 10 * lay.f, gh = 16 * lay.f;
+    const shown = Math.min(n, lay.cols * lay.rows);
+    let out = "";
+    for (let i = 0; i < shown; i++) {
+      const col = i % lay.cols, row = Math.floor(i / lay.cols);
+      const x = x0 + w - (col + 1) * cw + (cw - gw) / 2;
+      const y = y0 + h - (row + 1) * ch + (ch - gh) / 2;
+      const cls = i >= n - nNew ? "p new" : "p";
+      out += '<use href="#person" class="' + cls + '" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + gw.toFixed(1) + '" height="' + gh.toFixed(1) + '"/>';
+    }
+    if (n > shown) out += '<text class="sub" x="' + (x0 + 4) + '" y="' + (y0 + 12) + '">+' + (n - shown) + ' more</text>';
+    if (n === 0 && empty) out += '<text class="note" x="' + (x0 + w / 2) + '" y="' + (y0 + h - 8) + '" text-anchor="middle">' + empty + '</text>';
+    return out;
+  }
+  const SCENE = {
+    layA: layoutFor(350, 148, Math.max(P.max_customers, 1)),
+    layB: layoutFor(214, 148, Math.max(20, STEPS * P.capacity * P.max_dispatch)),
+    init: function (svg) {
+      svg.innerHTML =
+        '<defs><symbol id="person" viewBox="0 0 10 16"><circle cx="5" cy="3.2" r="3"/><rect x="1" y="7" width="8" height="9" rx="3.5"/></symbol></defs>' +
+        '<rect class="slab" x="24" y="194" width="516" height="12" rx="3"/>' +
+        '<rect class="slab" x="600" y="194" width="380" height="12" rx="3"/>' +
+        '<line class="track" x1="20" y1="222" x2="980" y2="222"/>' +
+        '<text class="station" x="36" y="28">Station A</text><text class="sub" x="112" y="28" id="scA"></text>' +
+        '<text class="station" x="606" y="28">Station B</text><text class="sub" x="682" y="28" id="scB"></text>' +
+        '<text class="note" x="36" y="246" id="scNote"></text>' +
+        '<text class="sub" x="980" y="246" text-anchor="end" id="scPeriod"></text>' +
+        '<g id="crowdA"></g><g id="crowdB"></g>' +
+        '<g id="shuttle">' +
+        '<rect class="bus" x="404" y="160" width="120" height="48" rx="8"/>' +
+        '<rect class="bus-win" x="410" y="166" width="108" height="24" rx="4"/>' +
+        '<g id="seats"></g>' +
+        '<circle class="wheel" cx="428" cy="212" r="7"/><circle class="wheel" cx="500" cy="212" r="7"/>' +
+        '<text class="bus-label" x="464" y="203" text-anchor="middle" id="busLabel"></text>' +
+        '</g>';
+    },
+    seats: function (load, cap) {
+      const g = $("seats");
+      if (cap <= 39) {
+        let out = "";
+        for (let i = 0; i < cap; i++) {
+          const c = i % 13, r = Math.floor(i / 13);
+          out += '<circle class="seat' + (i < load ? " on" : "") + '" cx="' + (416 + c * 8) + '" cy="' + (170 + r * 8) + '" r="3"/>';
+        }
+        g.innerHTML = out;
+      } else {
+        const w = cap > 0 ? 100 * load / cap : 0;
+        g.innerHTML = '<rect class="load-track" x="414" y="174" width="100" height="8" rx="4"/><rect class="load-bar" x="414" y="174" width="' + w.toFixed(1) + '" height="8" rx="4"/>';
+      }
+      $("busLabel").textContent = load + " / " + cap + (cap === 1 ? " seat" : " seats");
+    },
+    set: function (m) {
+      $("crowdA").innerHTML = crowdSvg(36, 40, 350, 148, m.waiting, m.newCount || 0, SCENE.layA, "nobody waiting");
+      $("crowdB").innerHTML = crowdSvg(606, 40, 214, 148, m.delivered, m.deliveredNew || 0, SCENE.layB, "nobody delivered yet");
+      $("scA").textContent = m.waiting + " waiting" + (m.waiting >= P.max_customers ? " (full)" : "");
+      $("scB").textContent = m.delivered + " delivered so far";
+      SCENE.seats(m.load || 0, m.cap);
+      const sh = $("shuttle");
+      sh.style.transitionDuration = (S.speed > 0 ? 650 / S.speed : 0) + "ms";
+      sh.classList.toggle("at-B", m.shuttleAt === "B");
+      $("scNote").textContent = m.note || "";
+      $("scPeriod").textContent = "period " + m.t + (m.decision ? " · deciding at s = " + m.waiting : "");
+    },
+    describe: function (row) {
+      const served = Math.min(row.s, row.a * P.capacity);
+      const left = row.s - served;
+      const arrivals = row.next - left;
+      const maxA = Math.max.apply(null, P.arrivals);
+      const capped = row.next === P.max_customers && left + maxA > P.max_customers;
+      return { served: served, left: left, arrivals: arrivals, capped: capped };
+    },
+    costText: function (row) {
+      const d = SCENE.describe(row);
+      const charged = P.holding_charged === "before_dispatch" ? row.s : P.holding_charged === "after_dispatch" ? d.left : d.left + P.mean_arrivals;
+      const parts = [];
+      if (row.a > 0) parts.push(fmt(row.a * P.dispatch_cost, 0) + " (" + row.a + (row.a > 1 ? " shuttles" : " shuttle") + ")");
+      parts.push(fmt(P.holding_cost, P.holding_cost % 1 ? 2 : 0) + " × " + fmt(charged, charged % 1 ? 1 : 0) + " waiting");
+      return parts.join(" + ") + " = " + fmt(row.cost);
+    },
+    columns: [{ head: "A_t", cell: function (row) { const d = SCENE.describe(row); return d.arrivals + (d.capped ? "⁺" : ""); } }],
+    deliveredBefore: function (t) { let n = 0; for (let i = 0; i < t && i < walk.rows.length; i++) n += SCENE.describe(walk.rows[i]).served; return n; },
+    resting: function () {
+      const t = walk.t;
+      return { t: t, waiting: walk.state, delivered: SCENE.deliveredBefore(t), load: 0, cap: Math.max(1, P.max_dispatch) * P.capacity, shuttleAt: "A",
+               decision: !walk.finished, note: walk.finished ? "replay finished after " + t + " periods" : "" };
+    },
+    phases: function (row) {
+      const d = SCENE.describe(row);
+      const before = SCENE.deliveredBefore(row.t);
+      const base = { t: row.t, delivered: before, deliveredNew: 0, cap: Math.max(row.a, 1) * P.capacity, load: 0, shuttleAt: "A", newCount: 0 };
+      const ph = [];
+      ph.push({ ms: 350, m: Object.assign({}, base, { waiting: row.s, note: "period " + row.t + ": " + SHORT[row.a].toLowerCase() + (row.overridden ? " (override)" : "") }) });
+      if (d.served > 0) {
+        ph.push({ ms: 350, m: Object.assign({}, base, { waiting: d.left, load: d.served, note: d.served + " board" + (d.left ? ", " + d.left + " keep waiting" : "") }) });
+        ph.push({ ms: 650, m: Object.assign({}, base, { waiting: d.left, load: d.served, shuttleAt: "B", note: "shuttle to Station B" }) });
+        ph.push({ ms: 350, m: Object.assign({}, base, { waiting: d.left, shuttleAt: "B", delivered: before + d.served, deliveredNew: d.served, note: d.served + " delivered" }) });
+        ph.push({ ms: 500, m: Object.assign({}, base, { waiting: d.left, delivered: before + d.served, note: "shuttle returns" }) });
+      }
+      ph.push({ ms: 450, m: Object.assign({}, base, { waiting: row.next, newCount: d.arrivals, delivered: before + d.served,
+        note: d.arrivals + " arrive → s = " + row.next + (d.capped ? " (station full: extra customers turned away)" : "") }) });
+      return ph;
+    },
+  };
+
+  let animToken = 0;
+  async function animate(phases) {
+    const token = ++animToken;
+    for (const ph of phases) {
+      if (token !== animToken) return false;
+      SCENE.set(ph.m);
+      if (reduced || S.speed === 0) continue;
+      await sleep(ph.ms / S.speed);
+    }
+    return token === animToken;
+  }
+
+  /* ---------------- actions ---------------- */
+  async function doStep(override) {
+    if (S.busy || walk.finished) return;
+    S.busy = true; setButtons();
+    const row = walk.step(override);
+    shadow.step();
+    renderTable(); renderSums(); renderTiles(row);
+    const done = await animate(SCENE.phases(row));
+    if (!done) return;
+    S.busy = false;
+    renderAll();
+  }
+  async function play() {
+    if (S.playing) { S.playing = false; setButtons(); return; }
+    S.playing = true; setButtons();
+    while (S.playing && !walk.finished) {
+      await doStep();
+      if (S.playing && !walk.finished && S.speed > 0 && !reduced) await sleep(250 / S.speed);
+    }
+    S.playing = false; setButtons();
+  }
+  function back() { animToken++; S.busy = false; S.playing = false; walk.back(); shadow.back(); renderAll(); }
+  function reset() { animToken++; S.busy = false; S.playing = false; walk.reset(); shadow.reset(); renderAll(); }
+
+  /* ---------------- rendering ---------------- */
+  function setButtons() {
+    const idle = !S.busy && !S.playing;
+    $("btnStep").disabled = !idle || walk.finished;
+    $("btnPlay").disabled = (walk.finished && !S.playing) || (S.busy && !S.playing);
+    $("btnPlay").textContent = S.playing ? "Pause" : "Play";
+    $("btnBack").disabled = walk.t === 0 && !S.busy;
+    const buttons = $("overrideGroup").querySelectorAll("button");
+    for (const b of buttons) b.disabled = !idle || walk.finished;
+  }
+  function renderHeader() {
+    $("desc").textContent = P.describe;
+    const src = OPT.source === "policy_iteration" ? "V* and π* from policy iteration (exact evaluation)" : "V* and π* from enumeration (γ = 1: no infinite-horizon solution)";
+    $("src").textContent = src + " · " + nS + " states, " + nA + " actions";
+    if (P.max_customers > 0) {
+      $("inpStart").max = nS - 1;
+      $("theta").max = nS;
+    }
+    $("inpStart").value = S.start;
+    $("inpSeed").value = S.seed;
+    $("theta").value = S.theta;
+    $("thetaVal").textContent = "θ = " + S.theta;
+  }
+  function renderPolicyOptions() {
+    const sel = $("selPolicy");
+    const opts = [
+      ["optimal", "Optimal policy π*" + (OPT.threshold !== null ? " (dispatch when s ≥ " + OPT.threshold + ")" : "")],
+      ["method", "Algorithm panel: " + METHODS[S.method].label + " at step " + S.k],
+      ["horizon", "Finite horizon T = " + P.horizon + ": π with T − t periods to go"],
+      ["wait", "Never dispatch"],
+      ["dispatch", "Always dispatch" + (nA > 2 ? " (" + SHORT[nA - 1].toLowerCase() + ")" : "")],
+      ["threshold", "Custom threshold θ"],
+    ];
+    sel.innerHTML = opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === S.source ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("");
+    $("thetaWrap").hidden = S.source !== "threshold";
+  }
+  function renderTiles(row) {
+    const t = walk.t, s = walk.state, pol = walk.policy;
+    const last = row || (t ? walk.rows[t - 1] : null);
+    const suggested = walk.finished ? null : pol(t, s);
+    const q = OPT.q[s];
+    const tiles = [];
+    tiles.push({ lab: "Period", val: String(t), sub: walk.finished ? "replay finished" : "of " + walk.limit + " · " + policyName() });
+    tiles.push({ lab: "Waiting now (state s)", val: String(s), sub: "capacity " + P.capacity + " per shuttle · station holds " + P.max_customers });
+    if (suggested !== null) {
+      const qs = q.map(function (v, a) { return SHORT[a].toLowerCase() + " " + fmt(v, 1); });
+      tiles.push({ lab: "Policy says", val: SHORT[suggested], sub: "Q*(s, ·): " + qs.join(" · "), small: true });
+    } else {
+      tiles.push({ lab: "Policy says", val: "–", sub: "no decision left" });
+    }
+    tiles.push({ lab: last ? "Cost of period " + last.t : "Cost this period", val: last ? fmt(last.cost) : "–",
+                 sub: last ? SCENE.costText(last) : "c(s, a) = a·c_f + c_h × customers waiting", over: last && last.overridden });
+    tiles.push({ lab: "Discounted cost so far", val: fmt(walk.total), sub: "optimal policy on the same draws: " + fmt(shadow.total) });
+    const vt = OPT.values[s], disc = Math.pow(GAMMA, t);
+    tiles.push({ lab: "Cost-to-go V*(s)", val: fmt(vt), sub: "so far + " + (sup(t) ? sup(t) + "·" : "") + "V*(s) = " + fmt(walk.total + disc * vt) + " vs V*(s₀) = " + fmt(OPT.values[walk.start]) });
+    $("tiles").innerHTML = tiles.map(function (x) {
+      return '<div class="tile' + (x.over ? " over" : "") + '"><div class="lab">' + esc(x.lab) + '</div><div class="val' + (x.small ? " small" : "") + ' num">' + esc(x.val) + '</div><div class="sub">' + esc(x.sub) + "</div></div>";
+    }).join("");
+  }
+  function renderTable() {
+    const heads = ["t", "s_t", "V*(s_t)"];
+    for (let a = 0; a < nA; a++) heads.push("Q*(s_t, " + SHORT[a].toLowerCase() + ")");
+    heads.push("policy", "taken", "c_t", "γ^t·c_t", "Σ so far");
+    for (const c of SCENE.columns) heads.push(c.head);
+    heads.push("s_{t+1}");
+    let html = "<thead><tr>" + heads.map(function (h) { return "<th>" + esc(h) + "</th>"; }).join("") + "</tr></thead><tbody>";
+    walk.rows.forEach(function (r, i) {
+      const cells = [r.t, r.s, fmt(OPT.values[r.s])];
+      for (let a = 0; a < nA; a++) cells.push(fmt(OPT.q[r.s][a]));
+      cells.push(SHORT[r.suggested], r.overridden ? '<span class="over">' + esc(SHORT[r.a]) + "</span>" : SHORT[r.a], fmt(r.cost), fmt(r.discounted), fmt(r.cumulative));
+      for (const c of SCENE.columns) cells.push(c.cell(r));
+      cells.push(r.next);
+      html += '<tr class="' + (i === walk.rows.length - 1 ? "cur" : "") + '">' + cells.map(function (c, j) {
+        return "<td" + (j === 4 + nA && r.overridden ? ' class="over"' : "") + ">" + c + "</td>";
+      }).join("") + "</tr>";
+    });
+    if (!walk.finished) {
+      const t = walk.t, s = walk.state;
+      const cells = [t, s, fmt(OPT.values[s])];
+      for (let a = 0; a < nA; a++) cells.push(fmt(OPT.q[s][a]));
+      cells.push(SHORT[walk.policy(t, s)], "?", "", "", "");
+      for (let i = 0; i < SCENE.columns.length; i++) cells.push("");
+      cells.push("");
+      html += '<tr class="pending">' + cells.map(function (c) { return "<td>" + c + "</td>"; }).join("") + "</tr>";
+    }
+    $("stepsTable").innerHTML = html + "</tbody>";
+  }
+  function renderSums() {
+    const t = walk.t, s = walk.state;
+    const parts = [];
+    parts.push("<span>policy: <b>" + esc(policyName()) + "</b></span>");
+    parts.push("<span>seed " + S.seed + ": the same draw u_t for every policy and override (common random numbers)</span>");
+    if (t > 0) {
+      const over = walk.rows.filter(function (r) { return r.overridden; }).length;
+      parts.push("<span>Σ γ^t c_t so far: <b>" + fmt(walk.total) + "</b>; optimal policy on the same draws: <b>" + fmt(shadow.total) + "</b>" + (over ? " (" + over + " override" + (over > 1 ? "s" : "") + ")" : "") + "</span>");
+      const regret = walk.rows.reduce(function (acc, r) { return acc + r.discount * (OPT.q[r.s][r.a] - OPT.values[r.s]); }, 0);
+      parts.push("<span>Σ γ^t [Q*(s_t, a_t) − V*(s_t)] = <b>" + fmt(regret) + "</b> (0 whenever the taken actions are optimal)</span>");
+    }
+    $("sums").innerHTML = parts.join("");
+  }
+  function renderOverrides() {
+    const g = $("overrideGroup");
+    let html = '<span class="lab">or take instead:</span>';
+    for (let a = 0; a < nA; a++) html += '<button class="act" data-a="' + a + '">' + esc(SHORT[a]) + "</button>";
+    g.innerHTML = html;
+    for (const b of g.querySelectorAll("button")) b.addEventListener("click", function () { doStep(Number(b.dataset.a)); });
+  }
+  function renderHint() {
+    const text = [];
+    text.push("Each period: the policy decides at the current state s (customers waiting at Station A); a dispatched shuttle carries up to " + P.capacity + " of them to Station B; the cost c(s, a) is charged (holding " + P.holding_charged.replace(/_/g, " ") + "); then A_t new customers arrive (" + describeArrivals() + ").");
+    if (P.horizon <= STEPS) text.push("T = " + P.horizon + " ≤ " + STEPS + ", so the finite-horizon policy ends the replay after " + P.horizon + " periods.");
+    $("hint").textContent = text.join(" ");
+  }
+  function describeArrivals() {
+    const vals = P.arrivals, probs = P.arrival_probs;
+    if (vals.length === 1) return "always " + vals[0];
+    const uniform = probs.every(function (p) { return Math.abs(p - 1 / probs.length) < 1e-9; });
+    return (uniform ? "uniform on {" : "{") + vals.join(", ") + "}" + (uniform ? "" : " with probabilities " + probs.map(function (p) { return fmt(p, 2); }).join(", "));
+  }
+
+  /* algorithm panel */
+  function algoStates() {
+    const thr = OPT.threshold;
+    const picks = thr === null ? [0, 5, 10, 15, 20, nS - 1] : [0, thr - 1, thr, nS - 1, 5, 10, 20, 15];
+    const uniq = picks.filter(function (s, i, arr) { return s >= 0 && s < nS && arr.indexOf(s) === i; }).slice(0, 6);
+    uniq.sort(function (a, b) { return a - b; });
+    return uniq;
+  }
+  function renderPills() {
+    $("methodPills").innerHTML = METHOD_ORDER.map(function (m) {
+      return '<button class="pill" data-m="' + m + '" aria-pressed="' + (m === S.method) + '">' + esc(METHODS[m].label.replace(/ \(T = \d+\)/, "")) + "</button>";
+    }).join("");
+    for (const b of $("methodPills").querySelectorAll("button")) b.addEventListener("click", function () {
+      S.method = b.dataset.m;
+      const st = methodSteps();
+      S.k = st ? Math.min(S.k, st.length - 1) : 0;
+      if (S.source === "method") resetWalk(); else renderAll();
+    });
+  }
+  function renderAlgo() {
+    for (const b of $("methodPills").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.m === S.method));
+    const block = METHODS[S.method];
+    const st = methodSteps();
+    $("methodSummary").textContent = block.error ? "" : block.summary;
+    const stepper = $("kRange").parentElement;
+    if (!st) {
+      $("algoTable").innerHTML = "";
+      $("algoHint").innerHTML = '<span class="error">' + esc(block.error) + "</span>";
+      stepper.hidden = true;
+      return;
+    }
+    stepper.hidden = false;
+    const last = st.length - 1;
+    $("kRange").max = last; $("kRange").value = S.k;
+    $("kPrev").disabled = S.k <= 0; $("kNext").disabled = S.k >= last;
+    const what = S.method === "enumeration" ? "periods to go" : S.method === "value_iteration" ? "sweeps" : "improvement steps";
+    $("kLabel").textContent = "k = " + S.k + " " + what;
+    const states = algoStates();
+    const isPI = S.method === "policy_iteration";
+    let html = "<thead><tr><th>k</th>" + states.map(function (s) { return "<th>" + (isPI ? "V^π" : "V") + "<sub>k</sub>(" + s + ")</th>"; }).join("") +
+      (nA === 2 ? "<th>dispatch when</th>" : "") + "<th>" + (isPI ? "changed" : "max change") + "</th></tr></thead><tbody>";
+    st.forEach(function (row, k) {
+      const cells = [k].concat(states.map(function (s) { return fmt(row.values[s], 1); }));
+      if (nA === 2) cells.push(row.policy === null ? "–" : row.threshold === null ? "never" : "s ≥ " + row.threshold);
+      cells.push(isPI ? (row.changed === null ? "–" : row.changed + " states") : (row.change === null ? "–" : fmtG(row.change)));
+      html += '<tr class="pick' + (k === S.k ? " cur" : "") + '" data-k="' + k + '">' + cells.map(function (c) { return "<td>" + c + "</td>"; }).join("") + "</tr>";
+    });
+    $("algoTable").innerHTML = html + "</tbody>";
+    for (const tr of $("algoTable").querySelectorAll("tr.pick")) tr.addEventListener("click", function () { setK(Number(tr.dataset.k)); });
+    const hints = {
+      enumeration: "Backward induction: V_0 ≡ 0, V_k(s) = min_a [c(s, a) + γ E V_{k−1}(s′)]; row k is the optimal value and first decision with k periods to go. The replay option “finite horizon” uses π with T − t periods to go in period t.",
+      value_iteration: "Starting from V_0 ≡ 0, sweep k of value iteration is exactly backward induction with k periods to go; the row's policy is greedy with respect to V_k. Value iteration keeps sweeping until the change is below tol = " + fmtG(block.tol) + ".",
+      policy_iteration: "Row k is the k-th policy (k = 0: never dispatch) with its exact value V^π (linear solve); “changed” counts the states whose action the greedy improvement step altered.",
+    };
+    $("algoHint").textContent = hints[S.method];
+  }
+  function setK(k) {
+    const st = methodSteps();
+    if (!st) return;
+    S.k = Math.max(0, Math.min(st.length - 1, k));
+    if (S.source === "method") resetWalk(); else renderAll();
+  }
+
+  /* charts */
+  function ticks(min, max, n) {
+    const span = (max - min) || 1;
+    const step0 = Math.pow(10, Math.floor(Math.log10(span / n)));
+    const err = span / n / step0;
+    const step = err >= 7.5 ? 10 * step0 : err >= 3.5 ? 5 * step0 : err >= 1.5 ? 2 * step0 : step0;
+    const out = [];
+    for (let v = Math.ceil(min / step - 1e-9) * step; v <= max + 1e-9; v += step) out.push(+v.toFixed(10));
+    return out;
+  }
+  function overlay() {
+    const st = currentStep();
+    if (!st) return null;
+    const isPI = S.method === "policy_iteration";
+    return { values: st.values, policy: st.policy, threshold: st.threshold,
+             label: (isPI ? "V^π" : "V") + "_" + S.k + " (" + METHODS[S.method].label.replace(/ \(T = \d+\)/, "").toLowerCase() + ", k = " + S.k + ")",
+             plabel: "π_" + S.k + " (" + METHODS[S.method].label.replace(/ \(T = \d+\)/, "").toLowerCase() + ", k = " + S.k + ")" };
+  }
+  function hook(svgId, tipId, handler) {
+    const svg = $(svgId), tip = $(tipId);
+    const move = function (ev) {
+      const r = svg.getBoundingClientRect();
+      const vb = svg.viewBox.baseVal;
+      const x = (ev.clientX - r.left) / r.width * vb.width, y = (ev.clientY - r.top) / r.height * vb.height;
+      const text = handler(x, y);
+      if (text) { tip.innerHTML = text; tip.hidden = false; } else tip.hidden = true;
+    };
+    svg.onmousemove = move;
+    svg.onmouseleave = function () { tip.hidden = true; svg.querySelectorAll(".cross").forEach(function (e) { e.remove(); }); };
+  }
+  const VC = { l: 46, r: 12, t: 10, b: 30, W: 360, H: 220 };
+  function renderValueChart() {
+    const ov = overlay();
+    const series1 = OPT.values;
+    let ymax = 0;
+    for (const v of series1) ymax = Math.max(ymax, v);
+    if (ov) for (const v of ov.values) ymax = Math.max(ymax, v);
+    const yt = ticks(0, ymax || 1, 4);
+    ymax = Math.max(ymax, yt[yt.length - 1]) || 1;
+    const sx = function (s) { return VC.l + (nS > 1 ? s / (nS - 1) : 0.5) * (VC.W - VC.l - VC.r); };
+    const sy = function (v) { return VC.H - VC.b - v / ymax * (VC.H - VC.t - VC.b); };
+    const path = function (vals) { return vals.map(function (v, s) { return (s ? "L" : "M") + sx(s).toFixed(1) + " " + sy(v).toFixed(1); }).join(""); };
+    let html = "";
+    for (const v of yt) html += '<line class="grid" x1="' + VC.l + '" x2="' + (VC.W - VC.r) + '" y1="' + sy(v).toFixed(1) + '" y2="' + sy(v).toFixed(1) + '"/><text class="tick" x="' + (VC.l - 6) + '" y="' + (sy(v) + 3).toFixed(1) + '" text-anchor="end">' + compact(v) + "</text>";
+    const xt = ticks(0, nS - 1, 5).filter(function (s) { return s <= nS - 1; });
+    for (const s of xt) html += '<text class="tick" x="' + sx(s).toFixed(1) + '" y="' + (VC.H - VC.b + 14) + '" text-anchor="middle">' + s + "</text>";
+    html += '<line class="axis" x1="' + VC.l + '" x2="' + (VC.W - VC.r) + '" y1="' + (VC.H - VC.b) + '" y2="' + (VC.H - VC.b) + '"/>';
+    html += '<text class="lbl" x="' + ((VC.l + VC.W - VC.r) / 2) + '" y="' + (VC.H - 4) + '" text-anchor="middle">customers waiting, s</text>';
+    if (nS > 1) {
+      html += '<path class="s1 area" d="' + path(series1) + "L" + sx(nS - 1).toFixed(1) + " " + sy(0) + "L" + sx(0) + " " + sy(0) + 'Z"/>';
+      if (ov) html += '<path class="s2" d="' + path(ov.values) + '"/>';
+      html += '<path class="s1" d="' + path(series1) + '"/>';
+    }
+    const s0 = walk.state;
+    html += '<circle class="mark" cx="' + sx(s0).toFixed(1) + '" cy="' + sy(series1[s0]).toFixed(1) + '" r="5"/>';
+    html += '<rect class="hit" x="' + VC.l + '" y="' + VC.t + '" width="' + (VC.W - VC.l - VC.r) + '" height="' + (VC.H - VC.t - VC.b) + '"/>';
+    $("chartValue").innerHTML = html;
+    $("legValue").innerHTML = '<span><i class="k1"></i>V* (' + esc(OPT.source.replace("_", " ")) + ")</span>" + (ov ? '<span><i class="k2"></i>' + esc(ov.label) + "</span>" : "") + '<span><i class="k1"></i>current state s = ' + s0 + "</span>";
+    hook("chartValue", "tipValue", function (x) {
+      const s = Math.max(0, Math.min(nS - 1, Math.round((x - VC.l) / (VC.W - VC.l - VC.r) * (nS - 1))));
+      const svg = $("chartValue");
+      svg.querySelectorAll(".cross").forEach(function (e) { e.remove(); });
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", "cross"); line.setAttribute("x1", sx(s)); line.setAttribute("x2", sx(s)); line.setAttribute("y1", VC.t); line.setAttribute("y2", VC.H - VC.b);
+      svg.insertBefore(line, svg.lastChild);
+      let txt = "s = " + s + " · V* = " + fmt(series1[s]) + " · π*: " + esc(SHORT[OPT.policy[s]]);
+      if (ov) txt += "<br>" + esc(ov.label.split(" (")[0]) + " = " + fmt(ov.values[s]);
+      return txt;
+    });
+  }
+  function bandSvg(policy, y, h, alt, sx) {
+    let out = "";
+    let s = 0;
+    while (s < nS) {
+      let e = s;
+      while (e + 1 < nS && policy[e + 1] === policy[s]) e++;
+      const a = policy[s];
+      const cls = nA === 2 ? (a ? "band1" : "band0") : (a === 0 ? "band0" : "band-" + Math.min(5, a + 1));
+      const x0 = sx(s - 0.5), x1 = sx(e + 0.5);
+      out += '<rect class="' + cls + (alt && a ? " alt" : "") + '" x="' + x0.toFixed(1) + '" y="' + y + '" width="' + Math.max(0.5, x1 - x0).toFixed(1) + '" height="' + h + '"/>';
+      s = e + 1;
+    }
+    return out;
+  }
+  function renderPolicyChart() {
+    const ov = overlay();
+    const L = 46, R = 12, W = 360, H = 220;
+    const sx = function (s) { return L + (nS > 1 ? (s + 0.5) / nS : 0.5) * (W - L - R); };
+    const rows = [{ label: "π*", policy: OPT.policy, threshold: OPT.threshold, alt: false }];
+    if (ov && ov.policy) rows.push({ label: "π_" + S.k, policy: ov.policy, threshold: ov.threshold, alt: true });
+    if (S.source === "threshold" || S.source === "wait" || S.source === "dispatch") {
+      const pol = []; for (let s = 0; s < nS; s++) pol.push(policyFn()(0, s));
+      rows.push({ label: "replay", policy: pol, threshold: null, alt: true });
+    }
+    let html = "";
+    const bh = 26, gap = 18, top = 24;
+    rows.forEach(function (r, i) {
+      const y = top + i * (bh + gap);
+      html += '<text class="lbl" x="' + (L - 6) + '" y="' + (y + bh / 2 + 4) + '" text-anchor="end">' + esc(r.label) + "</text>";
+      html += bandSvg(r.policy, y, bh, r.alt, sx);
+      if (r.threshold !== null && r.threshold !== undefined && nA === 2) {
+        const x = sx(r.threshold - 0.5);
+        html += '<line class="thr" x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + (y - 4) + '" y2="' + (y + bh + 4) + '"/>';
+        html += '<text class="tick" x="' + (x + 4).toFixed(1) + '" y="' + (y - 6) + '">s ≥ ' + r.threshold + "</text>";
+      } else if (nA === 2) {
+        html += '<text class="tick" x="' + (W - R) + '" y="' + (y - 6) + '" text-anchor="end">never dispatches</text>';
+      }
+    });
+    const xt = ticks(0, nS - 1, 5).filter(function (s) { return s <= nS - 1; });
+    const axisY = top + rows.length * (bh + gap) + 4;
+    html += '<line class="axis" x1="' + L + '" x2="' + (W - R) + '" y1="' + axisY + '" y2="' + axisY + '"/>';
+    for (const s of xt) html += '<text class="tick" x="' + sx(s).toFixed(1) + '" y="' + (axisY + 14) + '" text-anchor="middle">' + s + "</text>";
+    html += '<text class="lbl" x="' + ((L + W - R) / 2) + '" y="' + (axisY + 30) + '" text-anchor="middle">customers waiting, s</text>';
+    const s0 = walk.state;
+    html += '<line class="cross" x1="' + sx(s0).toFixed(1) + '" x2="' + sx(s0).toFixed(1) + '" y1="' + (top - 10) + '" y2="' + axisY + '"/>';
+    html += '<rect class="hit" x="' + L + '" y="' + (top - 10) + '" width="' + (W - L - R) + '" height="' + (axisY - top + 10) + '"/>';
+    $("chartPolicy").innerHTML = html;
+    $("chartPolicy").setAttribute("viewBox", "0 0 360 " + (axisY + 36));
+    let leg = "";
+    if (nA === 2) leg = '<span><i class="k0"></i>wait</span><span><i class="k1"></i>dispatch (π*)</span>' + (rows.length > 1 ? '<span><i class="k2"></i>dispatch (' + esc(rows.slice(1).map(function (r) { return r.label; }).join(", ")) + ")</span>" : "");
+    else leg = LABELS.map(function (l, a) { return "<span>" + (a ? '<i class="k1" style="opacity:' + (0.35 + 0.65 * a / (nA - 1)) + '"></i>' : '<i class="k0"></i>') + esc(SHORT[a]) + "</span>"; }).join("");
+    $("legPolicy").innerHTML = leg;
+    hook("chartPolicy", "tipPolicy", function (x) {
+      const s = Math.max(0, Math.min(nS - 1, Math.floor((x - L) / (W - L - R) * nS)));
+      return rows.map(function (r) { return esc(r.label) + "(" + s + ") = " + esc(SHORT[r.policy[s]]); }).join("<br>");
+    });
+  }
+  function renderConvChart() {
+    const block = METHODS[S.method];
+    const L = 46, R = 12, T = 12, B = 30, W = 360, H = 220;
+    const hist = block.history || [];
+    const isPI = S.method === "policy_iteration";
+    const logy = !isPI;
+    if (!hist.length) { $("chartConv").innerHTML = ""; $("legConv").textContent = block.error || "no iterations"; return; }
+    const floor = 1e-16;
+    const yv = function (v) { return logy ? Math.log10(Math.max(v, floor)) : v; };
+    let ymin = Infinity, ymax = -Infinity, xmax = 0;
+    for (const p of hist) { const y = yv(p[1]); ymin = Math.min(ymin, y); ymax = Math.max(ymax, y); xmax = Math.max(xmax, p[0]); }
+    if (logy && block.tol) { ymin = Math.min(ymin, Math.log10(block.tol)); }
+    if (!logy) ymin = 0;
+    if (ymax - ymin < 1e-9) { ymax += 1; ymin -= 1; }
+    const yt = logy ? ticks(Math.floor(ymin), Math.ceil(ymax), 4).filter(function (v) { return Number.isInteger(v); }) : ticks(ymin, ymax, 4);
+    if (logy) { ymin = Math.min(ymin, yt[0]); ymax = Math.max(ymax, yt[yt.length - 1]); } else ymax = Math.max(ymax, yt[yt.length - 1]);
+    const sx = function (i) { return L + (xmax > 0 ? i / xmax : 0.5) * (W - L - R); };
+    const sy = function (y) { return H - B - (y - ymin) / (ymax - ymin) * (H - T - B); };
+    let html = "";
+    for (const v of yt) html += '<line class="grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + sy(v).toFixed(1) + '" y2="' + sy(v).toFixed(1) + '"/><text class="tick" x="' + (L - 6) + '" y="' + (sy(v) + 3).toFixed(1) + '" text-anchor="end">' + (logy ? (v === 0 ? "1" : "1e" + v) : compact(v)) + "</text>";
+    const xt = ticks(0, xmax, 5).filter(function (i) { return i <= xmax; });
+    for (const i of xt) html += '<text class="tick" x="' + sx(i).toFixed(1) + '" y="' + (H - B + 14) + '" text-anchor="middle">' + (i + 1) + "</text>";
+    html += '<line class="axis" x1="' + L + '" x2="' + (W - R) + '" y1="' + (H - B) + '" y2="' + (H - B) + '"/>';
+    html += '<text class="lbl" x="' + ((L + W - R) / 2) + '" y="' + (H - 4) + '" text-anchor="middle">' + (isPI ? "improvement step k" : S.method === "enumeration" ? "periods to go, k" : "sweep k") + "</text>";
+    if (logy && block.tol) {
+      const y = sy(Math.log10(block.tol));
+      html += '<line class="tol" x1="' + L + '" x2="' + (W - R) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '"/><text class="tick" x="' + (L + 4) + '" y="' + (y - 4).toFixed(1) + '">tol = ' + fmtG(block.tol) + "</text>";
+    }
+    html += '<path class="s1" d="' + hist.map(function (p, j) { return (j ? "L" : "M") + sx(p[0]).toFixed(1) + " " + sy(yv(p[1])).toFixed(1); }).join("") + '"/>';
+    for (const p of hist) {
+      if (p[0] >= STEPS) break;
+      const cur = p[0] === S.k - 1;
+      html += '<circle class="' + (cur ? "m2" : "m1") + '" cx="' + sx(p[0]).toFixed(1) + '" cy="' + sy(yv(p[1])).toFixed(1) + '" r="' + (cur ? 6 : 4) + '"/>';
+    }
+    html += '<rect class="hit" x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '"/>';
+    $("chartConv").innerHTML = html;
+    $("legConv").innerHTML = '<span><i class="k1"></i>' + esc(block.history_label) + " per " + (isPI ? "improvement step" : "sweep") + '</span><span><i class="k2"></i>step k = ' + S.k + " of the panel</span>" + (hist.length < block.iterations ? "<span>(" + hist.length + " of " + block.iterations + " iterations drawn)</span>" : "");
+    hook("chartConv", "tipConv", function (x) {
+      const i = Math.max(0, Math.min(xmax, Math.round((x - L) / (W - L - R) * xmax)));
+      let best = hist[0];
+      for (const p of hist) if (Math.abs(p[0] - i) < Math.abs(best[0] - i)) best = p;
+      return (isPI ? "step " : "k = ") + (best[0] + 1) + ": " + fmtG(best[1]);
+    });
+  }
+  function renderValuesTable() {
+    const ov = overlay();
+    let html = "<thead><tr><th>s</th><th>V*(s)</th><th>π*(s)</th>" + SHORT.map(function (l) { return "<th>Q*(s, " + esc(l.toLowerCase()) + ")</th>"; }).join("") + (ov ? "<th>" + esc(ov.label.split(" (")[0]) + "</th>" : "") + "</tr></thead><tbody>";
+    for (let s = 0; s < nS; s++) {
+      html += "<tr><td>" + s + "</td><td>" + fmt(OPT.values[s]) + "</td><td>" + esc(SHORT[OPT.policy[s]]) + "</td>" + OPT.q[s].map(function (q) { return "<td>" + fmt(q) + "</td>"; }).join("") + (ov ? "<td>" + fmt(ov.values[s]) + "</td>" : "") + "</tr>";
+    }
+    $("valuesTable").innerHTML = html + "</tbody>";
+  }
+  function renderAll() {
+    SCENE.set(SCENE.resting());
+    renderTiles(null);
+    renderTable();
+    renderSums();
+    renderPolicyOptions();
+    renderAlgo();
+    renderValueChart();
+    renderPolicyChart();
+    renderConvChart();
+    renderValuesTable();
+    setButtons();
+  }
+
+  /* ---------------- wiring ---------------- */
+  SCENE.init($("scene"));
+  renderHeader();
+  renderOverrides();
+  renderPills();
+  renderHint();
+  $("btnStep").addEventListener("click", function () { doStep(); });
+  $("btnPlay").addEventListener("click", play);
+  $("btnBack").addEventListener("click", back);
+  $("btnReset").addEventListener("click", reset);
+  $("selPolicy").addEventListener("change", function (ev) { S.source = ev.target.value; resetWalk(); });
+  $("theta").addEventListener("input", function (ev) { S.theta = Number(ev.target.value); $("thetaVal").textContent = "θ = " + S.theta; resetWalk(); });
+  $("inpStart").addEventListener("change", function (ev) {
+    const v = Math.max(0, Math.min(nS - 1, Math.round(Number(ev.target.value) || 0)));
+    ev.target.value = v; S.start = v; resetWalk();
+  });
+  $("inpSeed").addEventListener("change", function (ev) {
+    const v = Math.max(0, Math.round(Number(ev.target.value) || 0));
+    ev.target.value = v; S.seed = v; resetWalk();
+  });
+  $("selSpeed").addEventListener("change", function (ev) { S.speed = Number(ev.target.value); document.body.classList.toggle("no-motion", S.speed === 0); });
+  $("kPrev").addEventListener("click", function () { setK(S.k - 1); });
+  $("kNext").addEventListener("click", function () { setK(S.k + 1); });
+  $("kRange").addEventListener("input", function (ev) { setK(Number(ev.target.value)); });
+  renderAll();
+  if (/auto/.test(window.location.hash)) {
+    S.speed = 0;
+    $("selSpeed").value = "0";
+    document.body.classList.add("no-motion");
+    play();
+  }
+})();
+</script>
+</body>
+</html>

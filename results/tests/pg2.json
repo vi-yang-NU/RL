@@ -1,0 +1,363 @@
+{
+  "section": "pg2",
+  "title": "Policy Gradient: Part 2",
+  "updated": "2026-10-26 12:37:04",
+  "host": "mlds-deepdish2",
+  "python": "3.10.12",
+  "tests": [
+    {
+      "name": "unbiased_lower_variance",
+      "title": "A baseline leaves the expected gradient unchanged and changes its variance",
+      "what": "On a Bernoulli bandit (success probabilities 0.3 and 0.7) with a fixed policy, draws 2000 single-episode gradient estimates with no baseline, with the constant baseline b = 0.5 (the mean reward), with a deliberately bad constant b = 5, and with an untrained value network, and compares their means and variances.",
+      "how": "Any baseline that does not depend on the action keeps the estimator unbiased (Lean: baseline_unbiased), so all four means must agree within sampling error. The variance is minimised near the mean return: b = 0.5 must have lower variance than no baseline, and b = 5 a much higher one, which is why the baseline has to be fitted rather than chosen arbitrarily.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "constant b = 0.5: same mean gradient as no baseline (within 4 s.e.)",
+          "passed": true,
+          "detail": "max z = 0.40"
+        },
+        {
+          "name": "constant b = 5: same mean gradient as no baseline (within 4 s.e.)",
+          "passed": true,
+          "detail": "max z = 0.69"
+        },
+        {
+          "name": "untrained value network: same mean gradient as no baseline (within 4 s.e.)",
+          "passed": true,
+          "detail": "max z = 0.01"
+        },
+        {
+          "name": "b = 0.5 lowers the variance",
+          "passed": true,
+          "detail": "0.194 < 0.368"
+        },
+        {
+          "name": "b = 5 raises the variance",
+          "passed": true,
+          "detail": "18.838 > 0.368"
+        }
+      ],
+      "metrics": {
+        "variance ratio (b = 0.5) / none": 0.5266258846446049,
+        "variance ratio (b = 5) / none": 51.23438704046972
+      },
+      "tables": {
+        "gradient estimates by baseline": [
+          {
+            "baseline": "none",
+            "mean gradient (bias of arm 2)": -0.0914,
+            "s.e.": 0.0068,
+            "total variance": 0.3677,
+            "max |z| vs none": 0.0
+          },
+          {
+            "baseline": "constant b = 0.5",
+            "mean gradient (bias of arm 2)": -0.088,
+            "s.e.": 0.0049,
+            "total variance": 0.1936,
+            "max |z| vs none": 0.4
+          },
+          {
+            "baseline": "constant b = 5",
+            "mean gradient (bias of arm 2)": -0.0575,
+            "s.e.": 0.0485,
+            "total variance": 18.8379,
+            "max |z| vs none": 0.69
+          },
+          {
+            "baseline": "untrained value network",
+            "mean gradient (bias of arm 2)": -0.0913,
+            "s.e.": 0.0067,
+            "total variance": 0.3583,
+            "max |z| vs none": 0.01
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] constant b = 0.5: same mean gradient as no baseline (within 4 s.e.): max z = 0.40\n  [PASS] constant b = 5: same mean gradient as no baseline (within 4 s.e.): max z = 0.69\n  [PASS] untrained value network: same mean gradient as no baseline (within 4 s.e.): max z = 0.01\n  [PASS] b = 0.5 lowers the variance: 0.194 < 0.368\n  [PASS] b = 5 raises the variance: 18.838 > 0.368\n",
+      "duration_s": 8.74,
+      "finished": "2026-10-26 12:35:49"
+    },
+    {
+      "name": "lock_in",
+      "title": "Baselines prevent lock-in on the first rewarded arm",
+      "what": "Three-armed bandit with positive rewards 0, 1 and 0.5, learning rate 0.03, 300 episodes, 10 seeds, trained without a baseline and with the mean, time and value baselines; counts the seeds whose final policy prefers the best arm.",
+      "how": "Without a baseline every sampled arm is reinforced (all returns are positive), so Adam can lock onto the 0.5 arm before the 1.0 arm is ever tried. A baseline near the average return makes the 0.5 arm's advantage zero or negative, so the policy keeps exploring until it finds the 1.0 arm: the baselines must find the best arm at least as often as plain REINFORCE.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "the value baseline finds the best arm at least as often as no baseline",
+          "passed": true,
+          "detail": "{'none': 6, 'mean': 7, 'time': 8, 'value': 8}"
+        },
+        {
+          "name": "the time baseline finds the best arm at least as often as no baseline",
+          "passed": true,
+          "detail": "{'none': 6, 'mean': 7, 'time': 8, 'value': 8}"
+        },
+        {
+          "name": "the best baseline finds the best arm in strictly more seeds than no baseline",
+          "passed": true,
+          "detail": "{'none': 6, 'mean': 7, 'time': 8, 'value': 8}"
+        }
+      ],
+      "metrics": {
+        "seeds finding the best arm: none": 6,
+        "seeds finding the best arm: mean": 7,
+        "seeds finding the best arm: time": 8,
+        "seeds finding the best arm: value": 8
+      },
+      "tables": {
+        "lock-in on the 0.5 arm": [
+          {
+            "baseline": "none",
+            "seeds finding the best arm (of 10)": 6,
+            "per seed": [
+              "\u2717",
+              "\u2717",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2717",
+              "\u2713",
+              "\u2717",
+              "\u2713"
+            ]
+          },
+          {
+            "baseline": "mean",
+            "seeds finding the best arm (of 10)": 7,
+            "per seed": [
+              "\u2713",
+              "\u2717",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2717",
+              "\u2713",
+              "\u2717",
+              "\u2713"
+            ]
+          },
+          {
+            "baseline": "time",
+            "seeds finding the best arm (of 10)": 8,
+            "per seed": [
+              "\u2713",
+              "\u2717",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2717",
+              "\u2713"
+            ]
+          },
+          {
+            "baseline": "value",
+            "seeds finding the best arm (of 10)": 8,
+            "per seed": [
+              "\u2713",
+              "\u2717",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2713",
+              "\u2717",
+              "\u2713"
+            ]
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] the value baseline finds the best arm at least as often as no baseline: {'none': 6, 'mean': 7, 'time': 8, 'value': 8}\n  [PASS] the time baseline finds the best arm at least as often as no baseline: {'none': 6, 'mean': 7, 'time': 8, 'value': 8}\n  [PASS] the best baseline finds the best arm in strictly more seeds than no baseline: {'none': 6, 'mean': 7, 'time': 8, 'value': 8}\n",
+      "duration_s": 24.64,
+      "finished": "2026-10-26 12:36:13"
+    },
+    {
+      "name": "value_baseline_learns",
+      "title": "The value baseline learns the policy's state values",
+      "what": "Trains REINFORCE with the value baseline on a 6-cell corridor (10% slip, \u03b3 = 0.9) for 500 episodes, then compares the value network's prediction in every state with the exact value of the learned stochastic policy (computed by policy evaluation on the corridor MDP) and with the optimal value.",
+      "how": "The baseline network is fitted by least squares to the observed returns, whose expectation is the value of the current policy, so V_\u03c6(s) must be close to V^\u03c0(s) in the states the policy visits (within 0.1 on a 0-1 scale) and must increase towards the goal. Because the policy is near-optimal by the end, V_\u03c6 is also close to V*. This checks that the baseline is state-dependent and informative, not a constant.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "value network within 0.1 of the policy's exact values in every non-terminal state",
+          "passed": true,
+          "detail": "max error 0.045"
+        },
+        {
+          "name": "value network increases towards the goal",
+          "passed": true,
+          "detail": "[0.6380000114440918, 0.7099999785423279, 0.781000018119812, 0.8709999918937683, 0.9649999737739563]"
+        },
+        {
+          "name": "the learned policy is near-optimal (P(right) \u2265 0.9 everywhere)",
+          "passed": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "max |V_\u03c6 \u2212 V^\u03c0| over non-terminal states": 0.04492471592365799,
+        "max |V_\u03c6 \u2212 V*|": 0.044859846095328226
+      },
+      "tables": {
+        "values per state (goal state excluded)": [
+          {
+            "state": 0,
+            "P(right)": 1.0,
+            "V^\u03c0(s) exact": 0.5927,
+            "V*(s)": 0.5928,
+            "value network": 0.6377
+          },
+          {
+            "state": 1,
+            "P(right)": 1.0,
+            "V^\u03c0(s) exact": 0.6659,
+            "V*(s)": 0.666,
+            "value network": 0.7102
+          },
+          {
+            "state": 2,
+            "P(right)": 1.0,
+            "V^\u03c0(s) exact": 0.7563,
+            "V*(s)": 0.7563,
+            "value network": 0.781
+          },
+          {
+            "state": 3,
+            "P(right)": 1.0,
+            "V^\u03c0(s) exact": 0.8597,
+            "V*(s)": 0.8597,
+            "value network": 0.8715
+          },
+          {
+            "state": 4,
+            "P(right)": 1.0,
+            "V^\u03c0(s) exact": 0.9774,
+            "V*(s)": 0.9774,
+            "value network": 0.9654
+          }
+        ]
+      },
+      "figures": [],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] value network within 0.1 of the policy's exact values in every non-terminal state: max error 0.045\n  [PASS] value network increases towards the goal: [0.6380000114440918, 0.7099999785423279, 0.781000018119812, 0.8709999918937683, 0.9649999737739563]\n  [PASS] the learned policy is near-optimal (P(right) \u2265 0.9 everywhere)\n",
+      "duration_s": 2.12,
+      "finished": "2026-10-26 12:36:15"
+    },
+    {
+      "name": "learning_curves",
+      "title": "Learning curves with and without a baseline",
+      "what": "A 10-cell corridor with 15% slip, learning rate 0.02, 300 episodes, 5 seeds each for no baseline, the mean baseline and the value baseline; records the average success rate over training (area under the learning curve), the final success rate, and the root-mean-square of the per-step weights (G_t \u2212 b_t) relative to that of G_t, measured on fresh episodes with the final policy and baseline.",
+      "how": "The variance of the gradient estimate scales with E[(G_t \u2212 b_t)\u00b2], so a useful baseline must shrink the root-mean-square weight (a constant baseline cannot change the standard deviation of the weights, only their mean square). Whether lower-variance updates also learn faster depends on the problem, so the areas under the learning curves are recorded and compared rather than asserted: on this sparse-reward corridor the only reward is a success, so plain REINFORCE's habit of reinforcing every success is not a handicap, while the value baseline first has to learn the values it subtracts.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "the value baseline shrinks the root-mean-square update weight",
+          "passed": true,
+          "detail": "ratio 0.193"
+        },
+        {
+          "name": "the mean baseline shrinks the root-mean-square update weight",
+          "passed": true,
+          "detail": "ratio 0.383"
+        }
+      ],
+      "metrics": {
+        "area under the learning curve: none": 0.9986666666666667,
+        "area under the learning curve: mean": 0.9986666666666667,
+        "area under the learning curve: value": 0.9686666666666668
+      },
+      "tables": {
+        "5-seed averages": [
+          {
+            "baseline": "none",
+            "mean success over training": 0.999,
+            "success in the last 50 episodes": 1.0,
+            "rms(G \u2212 b) / rms(G)": 1.0
+          },
+          {
+            "baseline": "mean",
+            "mean success over training": 0.999,
+            "success in the last 50 episodes": 1.0,
+            "rms(G \u2212 b) / rms(G)": 0.383
+          },
+          {
+            "baseline": "value",
+            "mean success over training": 0.969,
+            "success in the last 50 episodes": 1.0,
+            "rms(G \u2212 b) / rms(G)": 0.193
+          }
+        ]
+      },
+      "figures": [
+        "results/tests/pg2/learning_curves/learning_curves.png"
+      ],
+      "notes": [
+        "Area under the learning curve (mean success over 300 episodes, 5 seeds): none 0.999, mean baseline 0.999, value baseline 0.969."
+      ],
+      "error": null,
+      "stdout": "  [PASS] the value baseline shrinks the root-mean-square update weight: ratio 0.193\n  [PASS] the mean baseline shrinks the root-mean-square update weight: ratio 0.383\n",
+      "duration_s": 28.57,
+      "finished": "2026-10-26 12:36:44"
+    },
+    {
+      "name": "cartpole_with_baseline",
+      "title": "CartPole-v1 with the value baseline (200 episodes on the CPU)",
+      "what": "Trains CartPole-v1 for 200 episodes with the value baseline (handout settings otherwise), evaluates 50 episodes, and measures on 20 fresh episodes how much the baseline shrinks the update weights (root-mean-square of G_t \u2212 V(s_t) relative to G_t).",
+      "how": "The baseline must not stop CartPole from learning (moving average at least doubles, evaluation mean > 50) and must shrink the root-mean-square weight, which governs the variance of the gradient estimate, by a clear margin. The full 1000-episode run is `python run.py pg --part 2 --env cartpole`.",
+      "tags": [],
+      "status": "passed",
+      "checks": [
+        {
+          "name": "the 50-episode moving average at least doubles",
+          "passed": true,
+          "detail": "53.4 \u2192 209.7"
+        },
+        {
+          "name": "evaluation mean > 50 steps",
+          "passed": true,
+          "detail": "500.0"
+        },
+        {
+          "name": "the baseline shrinks the root-mean-square update weight by at least 30%",
+          "passed": true,
+          "detail": "ratio 0.125"
+        }
+      ],
+      "metrics": {
+        "moving average, episodes 1-50": 53.4,
+        "moving average, episodes 151-200": 209.68,
+        "evaluation mean (50 episodes)": 500.0,
+        "rms(G \u2212 V(s)) / rms(G) on fresh episodes": 0.12494271352065157,
+        "final value loss": 5.533708572387695
+      },
+      "tables": {},
+      "figures": [
+        "results/tests/pg2/cartpole_with_baseline/cartpole_200_baseline.png"
+      ],
+      "notes": [],
+      "error": null,
+      "stdout": "  [PASS] the 50-episode moving average at least doubles: 53.4 \u2192 209.7\n  [PASS] evaluation mean > 50 steps: 500.0\n  [PASS] the baseline shrinks the root-mean-square update weight by at least 30%: ratio 0.125\n",
+      "duration_s": 20.41,
+      "finished": "2026-10-26 12:37:04"
+    }
+  ]
+}

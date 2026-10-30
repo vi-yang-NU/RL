@@ -26,22 +26,21 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--baseline", help="Part 2 baseline name (default: DEFAULT_BASELINE in rl/pg/baselines.py)")
     parser.add_argument("--eval-episodes", type=int, default=500, help="episodes rolled out after training")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--device", default="auto", help="auto, cpu or cuda (auto picks cuda when available)")
+    parser.add_argument("--device", default="auto",
+                        help="auto (cuda when available, else cpu), cpu, cuda, cuda:N or mps (Apple GPU); cuda/mps fail if unavailable")
     parser.add_argument("--tag", help="suffix for the results folder, to keep several runs side by side")
     parser.add_argument("--eval-only", action="store_true", help="skip training; evaluate the saved policy.pt")
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="extra setting for cfg.extra (repeatable)")
 
 
 def _parse_extra(pairs: list[str]) -> dict:
-    extra = {}
-    for pair in pairs:
-        key, sep, value = pair.partition("=")
-        if not sep:
-            raise SystemExit(f"--set expects KEY=VALUE, got {pair!r}")
-        try:
-            extra[key] = json.loads(value)
-        except json.JSONDecodeError:
-            extra[key] = value
+    from rl.params import parse_overrides
+    from rl.pg.options import OPTION_NAMES
+
+    extra = parse_overrides(pairs)
+    unknown = sorted(set(extra) - set(OPTION_NAMES))
+    if unknown:
+        raise SystemExit(f"--set: unknown option(s) {unknown}; choose from {list(OPTION_NAMES)} (rl/pg/options.py)")
     return extra
 
 
@@ -59,6 +58,15 @@ def main(args: argparse.Namespace) -> int:
         print("TODO: choose a baseline for Part 2: pass --baseline <name> or set DEFAULT_BASELINE in rl/pg/baselines.py")
         return 1
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
+    if device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available (pass --device cpu to run on the CPU, or run on deepdish)")
+    if device == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("MPS (Apple GPU) is not available on this machine")
+    if device.startswith("cuda"):
+        index = torch.device(device).index or 0
+        print(f"GPU: {torch.cuda.get_device_name(index)} ({device}); CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '(unset)')}")
+    elif args.device == "auto":
+        print("note: no CUDA device visible, running on the CPU")
     if device.startswith("cuda") and torch.cuda.device_count() > 1:
         print(
             f"warning: {torch.cuda.device_count()} GPUs are visible, but deepdish jobs must use a single card. "

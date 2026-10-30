@@ -6,6 +6,9 @@
 #
 # Options:
 #   --python PATH   interpreter for the virtual environment (default: newest python3.x >= 3.9 found)
+#   --venv-dir DIR  where to create the virtual environment; .venv becomes a symlink to it. Default: .venv,
+#                   except on a server whose home is on NFS (deepdish), where /tmp/$USER/<project>-venv on the
+#                   local disk is used: importing PyTorch from the NFS home takes minutes per process there.
 #   --no-ssh        skip the SSH steps
 #   -y, --yes       accept the default answer to every question
 #
@@ -17,12 +20,14 @@ cd "$(dirname "$0")"
 
 MODE=local
 PYTHON=""
+VENV_DIR=""
 DO_SSH=1
 ASSUME_YES=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --server) MODE=server ;;
     --python) PYTHON=$2; shift ;;
+    --venv-dir) VENV_DIR=$2; shift ;;
     --no-ssh) DO_SSH=0 ;;
     -y|--yes) ASSUME_YES=1 ;;
     -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -65,8 +70,28 @@ if [[ -z $PYTHON ]]; then
   }
 fi
 note "using $("$PYTHON" -V 2>&1) at $PYTHON"
+fs_type=$(stat -f -c %T . 2>/dev/null || df -P -T . 2>/dev/null | awk 'NR == 2 { print $2 }')
+if [[ -z $VENV_DIR && $MODE == server && $fs_type == nfs* && -d /tmp ]]; then
+  VENV_DIR=/tmp/$USER/$(basename "$PWD")-venv
+  note "the project is on NFS ($fs_type): creating the virtual environment on the local disk at $VENV_DIR"
+  note "(importing PyTorch from an NFS home takes minutes per process; .venv will be a symlink)"
+fi
+VENV_DIR=${VENV_DIR:-.venv}
+if [[ $VENV_DIR != .venv ]]; then
+  if [[ -d .venv && ! -L .venv ]]; then
+    if ask "Replace the existing .venv directory with a symlink to $VENV_DIR?" y; then
+      rm -rf .venv
+    else
+      VENV_DIR=.venv
+    fi
+  fi
+  if [[ $VENV_DIR != .venv ]]; then
+    mkdir -p "$VENV_DIR"
+    ln -sfn "$VENV_DIR" .venv
+  fi
+fi
 if [[ ! -x .venv/bin/python ]]; then
-  "$PYTHON" -m venv .venv
+  "$PYTHON" -m venv "$VENV_DIR"
 fi
 VENV_PY=.venv/bin/python
 "$VENV_PY" -m pip install --quiet --upgrade pip

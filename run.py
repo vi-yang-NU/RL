@@ -4,9 +4,11 @@
     python run.py dp                              Section 2: enumeration, value and policy iteration
     python run.py pg --part 1 --env cartpole      Policy gradient Part 1 / Part 2 (cartpole or pong)
     python run.py tests --section dp              validation experiments (dp, pg1, pg2 or all)
+    python run.py unittest [-k text]              unit tests and edge cases (tests/unit, seconds)
     python run.py report                          rebuild report/report.md, report.pdf and instructions.pdf
     python run.py check                           check packages, GPU and gym environments
     python run.py ui                              open the dashboard
+    python run.py save [-m "message"]             commit every change and push it to GitHub, in one step
 """
 from __future__ import annotations
 
@@ -31,10 +33,18 @@ def main(argv: list[str] | None = None) -> int:
     tests.add_argument("--section", choices=["dp", "pg1", "pg2", "all"], default="all")
     tests.add_argument("-k", "--match", help="only run tests whose name or title contains this text")
     tests.add_argument("--list", action="store_true", help="list the registered tests without running them")
+    unit = sub.add_parser("unittest", help="run the unit tests in tests/unit (seconds; standard library unittest)")
+    unit.add_argument("-k", "--match", action="append", help="only tests whose name contains this text (repeatable)")
+    unit.add_argument("-v", "--verbose", action="store_true")
     sub.add_parser("report", help="rebuild report/report.md and the PDFs (report, run instructions)")
     sub.add_parser("check", help="check packages, GPU and gym environments on this machine")
     ui = sub.add_parser("ui", help="open the dashboard (Streamlit)")
     ui.add_argument("--port", type=int, default=8501)
+    save = sub.add_parser("save", help="commit every change and push it to GitHub, in one step")
+    save.add_argument("-m", "--message", help="commit message (default: the date and the folders that changed)")
+    save.add_argument("--no-push", action="store_true", help="commit on this computer only")
+    save.add_argument("--no-report", action="store_true",
+                      help="do not rebuild the report first, even when the answers or results are newer than it")
     args = parser.parse_args(argv)
 
     if args.command == "dp":
@@ -48,6 +58,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.list:
             return harness.list_tests(sections)
         return harness.run(sections, args.match)
+    if args.command == "unittest":
+        import unittest
+
+        loader = unittest.TestLoader()
+        if args.match:
+            loader.testNamePatterns = [f"*{m}*" for m in args.match]
+        suite = loader.discover(str(ROOT / "tests" / "unit"), top_level_dir=str(ROOT))
+        result = unittest.TextTestRunner(verbosity=2 if args.verbose else 1).run(suite)
+        return 0 if result.wasSuccessful() else 1
     if args.command == "report":
         from report.build import build_pdfs, build_report
 
@@ -66,6 +85,10 @@ def main(argv: list[str] | None = None) -> int:
         return check.main(args)
     if args.command == "ui":
         return run_ui(args.port)
+    if args.command == "save":
+        from rl.save import save as save_all
+
+        return save_all(ROOT, args.message, push=not args.no_push, report=not args.no_report)
     return 2
 
 
@@ -74,31 +97,58 @@ def run_ui(port: int) -> int:
 
     Headless mode skips Streamlit's first-run email prompt, which would otherwise wait for an answer in the
     terminal. Over ssh (e.g. VS Code Remote-SSH on deepdish) no browser is opened; forward the port instead.
+    Whatever goes wrong, the message says what to do next; the report is the fallback when the page will not load.
     """
+    import importlib.util
     import os
-    import socket
     import time
     import webbrowser
 
     url = f"http://localhost:{port}"
+    fallback = (
+        "If the page stays blank or shows a connection error: reload it once this line has appeared, open the URL\n"
+        f"by hand, or start the dashboard on another port (python run.py ui --port {port + 1}). It is not needed to\n"
+        "grade: report/report.pdf has every answer, plot and test result (report/instructions.pdf, section 3)."
+    )
+    if importlib.util.find_spec("streamlit") is None:
+        print(f"The dashboard needs Streamlit: pip install -r requirements-ui.txt\n{fallback}", file=sys.stderr)
+        return 1
+    if _listening(port):
+        print(f"Port {port} is already in use, perhaps by a dashboard that is already open at {url}.\n"
+              f"Open that one, or start this one on another port: python run.py ui --port {port + 1}", file=sys.stderr)
+        return 1
     cmd = [sys.executable, "-m", "streamlit", "run", str(ROOT / "ui" / "app.py"), "--server.port", str(port),
            "--server.address", "localhost", "--server.headless", "true"]
     proc = subprocess.Popen(cmd, cwd=ROOT)
     try:
         for _ in range(120):
             if proc.poll() is not None:
+                if proc.returncode:
+                    print(f"The dashboard did not start (exit code {proc.returncode}); the error is above.\n{fallback}",
+                          file=sys.stderr)
                 return proc.returncode
-            try:
-                socket.create_connection(("localhost", port), timeout=0.5).close()
+            if _listening(port):
                 break
-            except OSError:
-                time.sleep(0.5)
-        print(f"Dashboard: {url}  (Ctrl+C stops it)", flush=True)
+            time.sleep(0.5)
+        else:
+            print("The dashboard is taking more than a minute to start (the first start imports PyTorch); "
+                  "keep waiting, then reload the page.", flush=True)
+        print(f"Dashboard: {url}  (Ctrl+C stops it)\n{fallback}", flush=True)
         if not os.environ.get("SSH_CONNECTION"):
             webbrowser.open(url)
         return proc.wait()
     except KeyboardInterrupt:
         return proc.wait()
+
+
+def _listening(port: int) -> bool:
+    import socket
+
+    try:
+        socket.create_connection(("localhost", port), timeout=0.5).close()
+        return True
+    except OSError:
+        return False
 
 
 if __name__ == "__main__":

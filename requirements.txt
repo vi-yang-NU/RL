@@ -4,3 +4,9 @@ matplotlib>=3.7
 torch>=2.1
 gymnasium[atari]>=1.0
 ale-py>=0.9
+# CUDA kernels (rl/cuda): Numba compiles them for the GPU; without a GPU they run in Numba's CPU simulator.
+numba>=0.60,<0.61
+# NVVM for Numba on a machine with a CUDA driver but no CUDA toolkit (deepdish); not available on macOS.
+nvidia-cuda-nvcc-cu12>=12.6,<12.7; sys_platform == "linux"
+# NVIDIA's Python driver bindings: Numba 0.60's own binding segfaults with CUDA 13 drivers (deepdish).
+cuda-python>=12.6,<13; sys_platform == "linux"

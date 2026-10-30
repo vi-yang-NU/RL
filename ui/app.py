@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -25,6 +26,7 @@ from report.questions import QUESTIONS, SECTION_BY_KEY, SECTIONS, Question, ques
 from rl.outputs import FIGURE_BY_KEY, RESULTS, read_json, tests_dir  # noqa: E402
 from rl.plotting import BLUE_DARK, BLUE_LIGHT, moving_average  # noqa: E402
 from ui import deepdish as dd  # noqa: E402
+from ui.explore import explore_panel  # noqa: E402
 
 # job name -> (label, command). Policy-gradient job names double as their results folder.
 JOBS = {
@@ -39,26 +41,30 @@ JOBS = {
     "setup": ("Install the Python environment (setup.sh --server)", ["bash", "setup.sh", "--server"]),
     "check": ("Environment check (packages, GPU, gym envs)", ["python", "run.py", "check"]),
 }
-# The jobs each tab launches and lists. The Setup tab also lists jobs that belong to no part.
+# The jobs each part's tab launches and lists; the one-time setup jobs belong to the sidebar's deepdish panel.
 TAB_JOBS = {
     "dp": ("dp", "tests_dp"),
     "pg1": ("part1_cartpole", "part1_pong", "tests_pg1"),
     "pg2": ("part2_cartpole", "part2_pong", "tests_pg2"),
-    "setup": ("setup", "check"),
 }
+SETUP_JOBS = ("setup", "check")
 TABS = {
     "overview": "Overview",
     "dp": "2 · Value & Policy Iteration",
     "pg1": "3 · Policy Gradient Part 1",
     "pg2": "Policy Gradient Part 2",
-    "setup": "Setup (deepdish)",
 }
+CONTENTS_JS = (Path(__file__).resolve().parent / "contents.js").read_text()
 TEST_FILES = {"dp": "tests/test_dp.py", "pg1": "tests/test_pg_part1.py", "pg2": "tests/test_pg_part2.py"}
 STATUS_STYLE = {"passed": ":green[PASSED]", "failed": ":red[FAILED]", "error": ":orange[ERROR]", "recorded": ":blue[RECORDED]"}
 
 st.set_page_config(page_title="RL Assignment 1", layout="wide", initial_sidebar_state="expanded")
 # Streamlit shows the sidebar's collapse arrow only while the pointer is over the sidebar; keep it visible.
 st.html("<style>[data-testid='stSidebarCollapseButton'] { visibility: visible !important; }</style>")
+# Run and Explore are the interactive panels; a bar in the theme's primary colour on their left sets them apart from the
+# written answers below.
+ACCENT = st.get_option("theme.primaryColor") or "#2a78d6"
+st.html(f"<style>[class*='st-key-interactive_'] {{ border-left: 4px solid {ACCENT}; padding-left: 0.75rem; }}</style>")
 
 
 @st.cache_data(ttl=10, show_spinner=False)
@@ -204,12 +210,7 @@ def gpu_select(target) -> str:
 # --- run panels (one per tab) --------------------------------------------------------------------
 
 def _in_tab(name: str, tab: str) -> bool:
-    def matches(presets) -> bool:
-        return any(name == p or name.startswith(f"{p}_") for p in presets)
-
-    if tab == "setup":
-        return matches(TAB_JOBS["setup"]) or not any(matches(jobs) for t, jobs in TAB_JOBS.items() if t != "setup")
-    return matches(TAB_JOBS[tab])
+    return any(name == p or name.startswith(f"{p}_") for p in TAB_JOBS[tab])
 
 
 def _launch(target, name: str, gpu: str, argv: list[str], upload: bool, excludes: list[str]) -> tuple[bool, str]:
@@ -248,8 +249,7 @@ def run_panel(tab: str, cfg: dict, status: dd.ServerStatus, target, gpu: str) ->
     except ValueError as e:
         st.error(f"Extra arguments: {e}")
         return
-    job_gpu = "cpu" if preset == "setup" else gpu
-    st.code(f"CUDA_VISIBLE_DEVICES={'' if job_gpu == 'cpu' else job_gpu} {shlex.join(argv)}    # on {target.label}", language="bash")
+    st.code(f"CUDA_VISIBLE_DEVICES={'' if gpu == 'cpu' else gpu} {shlex.join(argv)}    # on {target.label}", language="bash")
 
     upload = target.remote and st.checkbox(
         "Upload code first", value=True, key=f"upload_first::{tab}",
@@ -260,7 +260,7 @@ def run_panel(tab: str, cfg: dict, status: dd.ServerStatus, target, gpu: str) ->
     output_key = f"run_output::{tab}"
     if launch.button(f"Launch on {target.label}", type="primary", key=f"launch::{tab}", disabled=not ready):
         with st.spinner(f"{'Uploading and launching' if upload else 'Launching'} on {target.label}…"):
-            st.session_state[output_key] = _launch(target, name, job_gpu, argv, upload, cfg["upload_excludes"])
+            st.session_state[output_key] = _launch(target, name, gpu, argv, upload, cfg["upload_excludes"])
         st.session_state[f"show_job::{tab}"] = name
         _job_rows.clear()
     if target.remote and download.button("Download results", key=f"download::{tab}", disabled=not ready,
@@ -323,58 +323,82 @@ def jobs_panel(tab: str, target) -> None:
     st.code(dd.job_tail(target, name, 200) or "(log is empty)", language=None)
 
 
-# --- setup tab -----------------------------------------------------------------------------------
+# --- deepdish setup (sidebar) -------------------------------------------------------------------
 
 def _save_remote_dir() -> None:
     dd.save_local_config(remote_dir=st.session_state.remote_dir.strip() or "~/RL")
 
 
-def setup_tab(cfg: dict, status: dd.ServerStatus, target, gpu: str, here: int | None) -> None:
-    st.header(TABS["setup"])
-    st.caption("One-time steps for the machine that runs the jobs. Afterwards, run each part from its own tab.")
-    if here:
-        st.info(f"The dashboard runs on deepdish{here}: no upload needed, jobs start in this folder.")
-    elif target.remote:
-        code_panel(cfg, status, target)
-    else:
-        st.info("Jobs run on this computer, in this folder, so there is nothing to upload. "
-                "Choose a deepdish server under *Jobs run on* in the sidebar to run there.")
-
-    st.subheader("Python environment")
-    st.caption("First time on a server: launch *Install the Python environment*, then *Environment check*. "
-               "The check should end with `ready` and `test computation on the GPU: ok`.")
-    run_panel("setup", cfg, status, target, gpu)
+def _server_info(server: dd.Server, remote_dir: str) -> tuple[bool, str]:
+    info = dd.remote_info(server, remote_dir)
+    if "error" in info:
+        return False, info["error"]
+    if info.get("code") != "yes":
+        flash("warning", "The project is not on the server yet: press Upload code.")
+    elif info.get("venv", "no") == "no":
+        flash("warning", "No Python environment on the server yet: press Install.")
+    return True, "\n".join(f"{k:<8} {v}" for k, v in info.items())
 
 
-def code_panel(cfg: dict, status: dd.ServerStatus, target: dd.RemoteTarget) -> None:
-    server = status.server
-    st.subheader(f"Code on {server.name}")
-    if not status.connected:
-        st.warning(f"{server.name} is not connected. Press **Connect** in the sidebar, or open a terminal / VS Code session to it.")
-    elif not status.ready:
-        st.caption(f"Connected via {status.summary}. Commands use your SSH key; if you log in with a password, press Connect.")
-    st.text_input("Project folder on deepdish", key="remote_dir", on_change=_save_remote_dir)
-    mirror = st.checkbox("Also delete files on deepdish that no longer exist here (results/, logs/ and .venv/ are kept)")
-    upload, download, check = st.columns(3)
-    if upload.button("Upload code", type="primary"):
-        with st.spinner(f"Uploading to {server.name}:{target.remote_dir}…"):
-            st.session_state.code_output = dd.upload(server, target.remote_dir, cfg["upload_excludes"], delete=mirror)
-    if download.button("Download results"):
-        with st.spinner(f"Downloading results from {server.name}…"):
-            st.session_state.code_output = dd.download(server, target.remote_dir)
-    if check.button("Check server"):
-        with st.spinner(f"Checking {server.name}…"):
-            info = dd.remote_info(server, target.remote_dir)
-        if "error" in info:
-            st.session_state.code_output = (False, info["error"])
+def setup_panel(cfg: dict, status: dd.ServerStatus, target, gpu: str, here: int | None) -> None:
+    """One-time steps for the machine that runs the jobs, under the connection settings in the sidebar: copy
+    the code to deepdish, install its Python environment and check it. Afterwards each part runs from its tab.
+    Graders, whose jobs run on their own computer, never see this panel."""
+    with st.expander("Set up deepdish (once per server)", icon=":material/build:"):
+        ready = not target.remote or status.connected
+        if here:
+            st.caption(f"The dashboard runs on deepdish{here}, so jobs start in this folder: nothing to upload.")
         else:
-            st.session_state.code_output = (True, "\n".join(f"{k:<8} {v}" for k, v in info.items()))
-            if info.get("code") != "yes":
-                flash("warning", "The project is not on the server yet: press Upload code.")
-            elif info.get("venv", "no") == "no":
-                flash("warning", "No Python environment on the server yet: launch 'Install the Python environment' below.")
-    show_flash()
-    show_output("code_output")
+            st.caption("Copy this project to the server, install its Python environment, then check it. The "
+                       "server's results/, logs/ and .venv/ are never overwritten.")
+            if not status.connected:
+                st.warning(f"{status.server.name} is not connected: press **Connect** above.")
+            elif not status.ready:
+                st.caption(f"Connected via {status.summary}. Commands use your SSH key; if you log in with a "
+                           "password, press Connect.")
+            st.text_input("Project folder on deepdish", key="remote_dir", on_change=_save_remote_dir)
+            mirror = st.checkbox("Also delete files there that no longer exist here",
+                                 help="results/, logs/ and .venv/ on the server are kept.")
+            upload, check = st.columns(2)
+            if upload.button("Upload code", type="primary", disabled=not ready):
+                with st.spinner(f"Uploading to {status.server.name}:{target.remote_dir}…"):
+                    st.session_state.setup_output = dd.upload(status.server, target.remote_dir,
+                                                              cfg["upload_excludes"], delete=mirror)
+            if check.button("Check server", disabled=not ready):
+                with st.spinner(f"Checking {status.server.name}…"):
+                    st.session_state.setup_output = _server_info(status.server, target.remote_dir)
+        st.markdown("**Python environment**")
+        st.caption("*Install* runs `setup.sh --server` there (uploading the code first). When its log ends, "
+                   "*Check* should end with `ready` and `test computation on the GPU: ok`.")
+        install, check_env = st.columns(2)
+        if install.button("Install", disabled=not ready, help=JOBS["setup"][0]):
+            with st.spinner(f"Launching on {target.label}…"):
+                st.session_state.setup_output = _launch(target, "setup", "cpu", list(JOBS["setup"][1]),
+                                                        target.remote, cfg["upload_excludes"])
+            _job_rows.clear()
+        if check_env.button("Check", disabled=not ready, help=JOBS["check"][0]):
+            st.session_state.setup_output = _launch(target, "check", gpu, list(JOBS["check"][1]), False, [])
+            _job_rows.clear()
+        show_flash()
+        show_output("setup_output")
+        if ready:
+            setup_jobs(target)
+
+
+def setup_jobs(target) -> None:
+    """The setup jobs on the target, and the log of one of them."""
+    rows, error = job_rows(target)
+    if error:
+        st.caption(f"Could not read jobs on {target.label}: {error}")
+        return
+    rows = [r for r in rows if r["name"] in SETUP_JOBS]
+    if not rows:
+        return
+    st.markdown("  \n".join(f"**{r['name']}**: {r['state']}" + (f" (exit {r['exit']})" if r["exit"] else "")
+                            + f" · {r['started']}" for r in rows))
+    name = st.selectbox("Log", [r["name"] for r in rows], key="setup_log")
+    st.code(dd.job_tail(target, name, 30) or "(log is empty)", language=None)
+    st.button("Refresh", key="setup_refresh", on_click=_job_rows.clear)
 
 
 # --- section tabs ----------------------------------------------------------------------------
@@ -461,14 +485,18 @@ def show_tests(section: str) -> None:
 
 def section_tab(key: str, cfg: dict, status: dd.ServerStatus, target, gpu: str) -> None:
     section = SECTION_BY_KEY[key]
-    st.header(section.title)
+    st.header(section.title, anchor=key)
     st.caption(f"{section.points} points · {section.breakdown}")
-    with st.expander("Run", expanded=True, icon=":material/play_arrow:"):
-        run_panel(key, cfg, status, target, gpu)
+    with st.container(key=f"interactive_run_{key}"):
+        with st.expander("Run", expanded=True, icon=":material/play_arrow:"):
+            run_panel(key, cfg, status, target, gpu)
+    if key == "dp":
+        with st.container(key="interactive_explore"):
+            explore_panel()
     saved = answer_store.load()["answers"]
     for q in questions_for(key):
         with st.container(border=True):
-            st.subheader(q.title)
+            st.subheader(q.title, anchor=q.id)
             st.markdown("\n".join(f"> {line}" for line in q.prompt.splitlines()))
             if q.figures:
                 show_figures(q.figures)
@@ -500,17 +528,23 @@ def _fill_from_git(values: dict[str, str]) -> None:
         answer_store.save_meta(field, value)
 
 
-GUIDE = f"""
-- **Tabs** above: this overview, one tab per part of the handout, and **{TABS['setup']}** (only needed to run jobs on
-  the deepdish GPU servers).
+GUIDE = """
+- **Tabs** above: this overview and one tab per part of the handout.
+- **Contents**, at the right edge of the page, lists the sections of the open tab; the entry for the section on
+  screen is highlighted, and the highlight glides to the next entry as you scroll. Click an entry to jump to it
+  (the list needs a window about 1250 px wide).
 - **A part's tab** lists the handout's questions in order, each in a box: the question, the required plots, the
   evaluation mean and standard deviation (policy gradient), the validation tests and the **Answer**. Click a
   validation test to see what it does, how it validates the algorithm, its checks, metrics and figures.
 - **The Run panel** at the top of a part's tab reruns that part: choose a job, press **Launch**, and follow its log
   and reward curve under **Jobs**. When it has finished, press R to reload the plots. Click the panel's header to
   collapse it.
-- **The sidebar** sets where jobs run (this computer or deepdish) and on which GPU. Hide it with « at its top and
-  bring it back with » at the top left.
+- **The sidebar** sets where jobs run (this computer or deepdish) and on which GPU; its **Set up deepdish** panel
+  is only needed to run jobs on the deepdish GPU servers. Hide it with « at its top and bring it back with » at
+  the top left.
+- **If the dashboard stops loading** (a blank page or a connection error): reload it once the terminal shows
+  `Dashboard: http://localhost:8501`. *If the dashboard does not load*, in the instructions below (section 3),
+  lists the other steps and the report as the fallback.
 
 Nothing has to be run to grade: the plots, statistics and test results shown are the submitted ones. Rerunning a
 part overwrites them in your copy (`git checkout results/` restores them); a **Run tag** keeps a policy-gradient
@@ -521,7 +555,7 @@ rerun in a separate folder.
 def overview_tab() -> None:
     data = answer_store.load()
     meta = data["meta"]
-    st.header("Overview")
+    st.header("Overview", anchor="overview")
     url = meta.get("repo_url", "").strip()
     details = {**meta, "repo_url": f"[{url}]({url})" if url else ""}
     st.markdown("  \n".join(f"**{label}:** {details.get(field) or '*not filled in*'}"
@@ -588,6 +622,27 @@ def _build() -> None:
     st.session_state.build_output = (True, "Wrote " + ", ".join(str(p.relative_to(ROOT)) for p in written))
 
 
+# --- contents (right edge of the page) --------------------------------------------------------
+
+def contents_panel() -> None:
+    """The headings of the open tab, listed at the right edge of the page with the one on screen highlighted
+    (ui/contents.js). Streamlit draws only inside its own elements, so a zero-height component installs the
+    script into the page itself, once per page load; from then on it follows reruns and tab switches itself."""
+    accent = st.get_option("theme.primaryColor") or "#2a78d6"
+    script = json.dumps(CONTENTS_JS.replace("__ACCENT__", accent))
+    components.html(
+        "<script>(function () {\n"
+        "  var page = window.parent;\n"
+        "  if (!page || page === window) return;\n"
+        "  if (page.__rlContents) { page.__rlContents.rebuild(); return; }\n"
+        "  var s = page.document.createElement('script');\n"
+        f"  s.textContent = {script};\n"
+        "  page.document.body.appendChild(s);\n"
+        "})();</script>",
+        height=0,
+    )
+
+
 # --- page ------------------------------------------------------------------------------------
 
 cfg = dd.load_config()
@@ -596,12 +651,14 @@ statuses = server_statuses(json.dumps(cfg, sort_keys=True))
 with st.sidebar:
     status = connection_panel(cfg, statuses, here)
     target, gpu = run_settings(cfg, status, here)
+    if target.remote or here:
+        setup_panel(cfg, status, target, gpu, here)
 
 st.title("Assignment 1: Reinforcement Learning")
 dot = ":green[●]" if status.connected else ":gray[○]"
 st.markdown(f"{dot} **{status.server.name}**: {status.summary} · due Oct 26, 2026, 11:59 pm")
 
-overview, dp, pg1, pg2, setup = st.tabs(list(TABS.values()))
+overview, dp, pg1, pg2 = st.tabs(list(TABS.values()))
 with overview:
     overview_tab()
 with dp:
@@ -610,5 +667,4 @@ with pg1:
     section_tab("pg1", cfg, status, target, gpu)
 with pg2:
     section_tab("pg2", cfg, status, target, gpu)
-with setup:
-    setup_tab(cfg, status, target, gpu, here)
+contents_panel()
