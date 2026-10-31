@@ -304,7 +304,7 @@ An example is we ran the cartpole's first 10 and evaluated that the math made se
 
 > The training suffers from high variance of the rewards in the sampled episodes; using a baseline helps to reduce the variance. Repeat the experiments of Part 1 using a constant or non-constant baseline of your choice. Explain which baseline you have chosen and how you implemented it.
 
-Which baseline to choose: I choose a learned state-value baseline, which essentiall yis another network that we use to help us predict the discounted returns. This is better than constant baselines such as the average return, mostly because constants cannot tell the difference between the states, so with this network we then can create a policy gradient that can have different variation amoung states
+Which baseline to choose: I choose a learned state-value baseline, which essentially is another network that we use to help us predict the discounted returns. This is better than constant baselines such as the average return, mostly because constants cannot tell the difference between the states, so with this network we then can create a policy gradient that can have different variation amoung states. The network is similar to the policy's architecture, but it has one output instead of one per action. It has its own weights as its own Adam optimizer with a learning rate of 0.01. it is able to enter the policy gradient by the difference which is how we calculate the loss
 
 ### Solution overview
 
@@ -350,7 +350,10 @@ From episodes 0-400 we can still see the model is training itself, but as we app
 
 **Evaluation over 500 episodes:** mean reward = -14.99, standard deviation = 2.57.
 
-**Learning rate.** As in Part 1, Pong-v5 uses Adam at 10⁻⁴ with an entropy bonus of 0.01 per step, because the handout's 0.01 collapsed the policy onto one action (see Part 1 (b)).
+Similar to Part 1, Pong-v5 uses Adam at 10⁻⁴ with an entropy bonus of 0.01 per step, because the handout's 0.01 collapsed the policy onto one action. As we can see from the histogram, we also seem to have better rewards in comparison to our non-baseline version. 
+
+Additionally looking at the provided filter, the network is not looking at the ball at all- so even just more information in that regards would probably help the algorithm a lot in predicting where its paddle needs to be. At the current moment its predicting where the paddle will be in any amount of time (aka it's trying to learn the relationship of the enemy's paddle in regards to the ball). And the reason why it's improving is because there is a relationship between how the enemy is currently moving with how the ball is being passed to us. With enough epochs we will be able to learn this relationship for sure. 
+In our Pong run with the value baseline, we had an evaluation mean of around -14, which is better than our prior -21 (the collapsed non baseline version) mean. We can see that it did learn, and scored around 6 points per game on average, and on its best game up to 15 points
 
 ### Edge cases
 
@@ -358,7 +361,7 @@ From episodes 0-400 we can still see the model is training itself, but as we app
 
 - it is possible that in our random initialization for our neural network for baseline, for it to create a induction bias that is really really bad, and that could potentially cause some problems within training. We address this by the lean proof baseline_unbiased covers this 
 - We would have an issue if the baseline depends on the action, however we only take the state as our input and not the action itself (as stated in the first statement) 
--
+- One thing I am curious about as well is if our model would eventually learn some sort of action where if it continuously moved the paddle up and down the chances of it hitting the ball would be pretty high. At this current point in time it is hard to tell, but we can potentially address this by providing some temporal encoding which we are not currently doing.
 
 ### Tests for validating the correctness of your algorithm
 
@@ -402,4 +405,5 @@ Validation results from `python run.py tests --section pg2` (last run 2026-10-26
 
 > Given an additional 3 months (extended period), what other validation tests and experiments would you perform?
 
-- There is a couple of deep learning techniques we could potentially apply in this Rl case- some ideas include some form of regularization or normalization for us to encourage certain learnings. Additionally I believe we can incorporate some of the more modern LLM tasks such as the transformers and multi-head attention for us to address some of the temporal encoding issues. I think that right now our states are very much just based on the training data (which in our case is running the simulation for a period of time). But similarly to the value and policy iteration (and policy gradients) all being DP problems, tells me that there may be a possibly interesting case if we were able to reference similar cases of for example for pong, when the enemy was somewhere on the top of the screen and I was on the bottom of the screen, and when the enemy was on top of screen and I was on top of the screen, and to carry over the k,v, values over to some decoder that will transfer the answer to our specific situation.
+- There is a couple of deep learning techniques we could potentially apply in this Rl case- some ideas include some form of regularization or normalization for us to encourage certain learnings. Additionally I believe we can incorporate some of the more modern LLM tasks such as the transformers and multi-head attention for us to address some of the temporal encoding issues. I think that right now our states are very much just based on the training data (which in our case is running the simulation for a period of time). But similarly to the value and policy iteration (and policy gradients) all being DP problems, tells me that there may be a possibly interesting case if we were able to reference similar cases of for example for pong, when the enemy was somewhere on the top of the screen and I was on the bottom of the screen, and when the enemy was on top of screen and I was on top of the screen, and to carry over the k,v, values over to some decoder that will transfer the answer to our specific situation. 
+- As we can see it seems like the pong's reward is gradually improving over time as our training episodes increase, as well as our entropy is gradually decreasing over time, so with the baseline it is performing much better in comparison with the other- if we had more training time, I would increase the amount of time we give for the system to train and it will eventually come up with an optimal model that can play pong better than any human.
