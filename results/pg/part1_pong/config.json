@@ -2,13 +2,13 @@
   "env": "pong",
   "part": 1,
   "gamma": 0.99,
-  "lr": 0.01,
+  "lr": 0.0001,
   "episodes": 2000,
   "baseline": "none",
   "seed": 0,
-  "device": "cpu",
+  "device": "cuda",
   "eval_episodes": 500,
   "extra": {},
-  "host": "Vincents-Air",
-  "cuda_visible_devices": null
+  "host": "mlds-deepdish2",
+  "cuda_visible_devices": "0"
 }

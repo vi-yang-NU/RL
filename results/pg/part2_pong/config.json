@@ -1,0 +1,14 @@
+{
+  "env": "pong",
+  "part": 2,
+  "gamma": 0.99,
+  "lr": 0.0001,
+  "episodes": 2000,
+  "baseline": "value",
+  "seed": 0,
+  "device": "cuda",
+  "eval_episodes": 500,
+  "extra": {},
+  "host": "mlds-deepdish2",
+  "cuda_visible_devices": "1"
+}

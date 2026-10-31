@@ -88,7 +88,12 @@ def _pg_figures(part: int) -> list[Figure]:
                 f"{run}_train",
                 f"pg/{run}/training_curve.png",
                 f"{label}: the episode reward against the number of training episodes, overlaid with the moving average "
-                f"of the rewards over 100 episodes.",
+                f"of the rewards over 100 episodes. The lower panel shows the policy itself per episode: its entropy and the "
+                f"fraction of {'RIGHT' if env == 'pong' else 'push-right'} actions"
+                + (", where a collapse onto one action would show. Trained with Adam at learning rate 10⁻⁴ instead of the "
+                   "handout's 0.01, plus an entropy bonus of 0.01 per step: with 0.01 and no bonus the policy collapsed onto "
+                   "a single action within about 150 episodes and lost every game 0 : 21 (results/pg/part1_pong_lr0.01)."
+                   if env == "pong" else "."),
                 command,
             ),
             Figure(
@@ -155,8 +160,43 @@ FIGURES: dict[str, list[Figure]] = {
             alt="full-page",
         ),
     ],
-    "pg1": _pg_figures(1),
-    "pg2": _pg_figures(2),
+    "pg1": [
+        Figure(
+            "pg1_tests_table",
+            "pg/pg1_tests_table.png",
+            "Policy Gradient Part 1, validation: summary of the validation experiments G1–G7, with what each one checks, how "
+            "it validates the algorithm, its pass criterion and the result observed (the table in report/pg1_tests_table.md). "
+            "The harness's detailed results for each experiment follow.",
+            "python scripts/tests_table.py --source report/pg1_tests_table.md --out results/pg/pg1_tests_table.png",
+            alt="full-page",
+        ),
+        *_pg_figures(1),
+    ],
+    "pg2": [
+        Figure(
+            "pg2_tests_table",
+            "pg/pg2_tests_table.png",
+            "Policy Gradient Part 2, validation: summary of the validation experiments B1–B5, with what each one checks, how "
+            "it validates the baseline, its pass criterion and the result observed (the table in report/pg2_tests_table.md). "
+            "The harness's detailed results for each experiment follow.",
+            "python scripts/tests_table.py --source report/pg2_tests_table.md --out results/pg/pg2_tests_table.png",
+            alt="full-page",
+        ),
+        *_pg_figures(2),
+        *(
+            Figure(
+                f"compare_{env}",
+                f"pg/compare_{env}.png",
+                f"Part 2 ({letter}), {ENV_LABELS[env]}: the Part 1 run (no baseline) against the Part 2 run (value baseline "
+                f"V(s)), with the same seed, learning rate and discount factor. Top: the episode rewards and their 100-episode "
+                f"moving averages. Bottom: the root mean square of the weights that multiply ∇ log π(a_t|s_t) in each update, "
+                f"G_t without the baseline and G_t − V(s_t) with it (log scale); the lower the line, the smaller the "
+                f"variance of the gradient estimate, which is what the baseline is for.",
+                f"python run.py pg --part 2 --env {env} --compare",
+            )
+            for letter, env in (("a", "cartpole"), ("b", "pong"))
+        ),
+    ],
 }
 FIGURE_BY_KEY = {f.key: f for figures in FIGURES.values() for f in figures}
 

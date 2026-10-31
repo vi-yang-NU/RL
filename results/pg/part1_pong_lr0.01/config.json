@@ -1,0 +1,17 @@
+{
+  "env": "pong",
+  "part": 1,
+  "gamma": 0.99,
+  "lr": 0.01,
+  "episodes": 2000,
+  "baseline": "none",
+  "seed": 0,
+  "device": "cpu",
+  "eval_episodes": 500,
+  "extra": {
+    "entropy_coef": 0.0
+  },
+  "host": "Vincents-Air",
+  "cuda_visible_devices": null,
+  "note": "trained before the entropy bonus existed (no bonus); entropy_coef recorded here so --replot labels it correctly"
+}

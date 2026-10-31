@@ -35,6 +35,9 @@ TEMPLATE = HERE / "watch.html"
 UNTRAINED = "Untrained policy (random initial weights)"
 CROP = (35, 195)  # the rows of the frame that `preprocess` keeps
 CARTPOLE_LIMITS = (2.4, None, 12 * 2 * np.pi / 360, None)  # |x| and |θ| at which CartPole-v1 ends the episode
+# Rows and columns of CartPole-v1's 400 × 600 frame that hold the pole and the middle half of the track (the track is
+# 4.8 wide over 600 pixels, so columns 150-450 are |x| ≤ 1.2); same 3:2 shape as the full frame.
+CARTPOLE_ZOOM = (120, 320, 150, 450)
 ACTIONS = {
     # per environment: (label per policy action, short label) in the order of the policy's outputs
     "cartpole": (("0: push the cart to the left", "1: push the cart to the right"), ("Left", "Right")),
@@ -407,18 +410,22 @@ def first_steps_figure(rec: Recording, path: Path, title: str, steps: int = 10) 
     sub = (f"{rec.env_id} · {rec.policy_label} · seed {rec.seed} · the episode lasted {rec.steps} steps, total reward "
            f"{rec.total_reward:g}. a: the action taken, π: the policy's probabilities of ({ACTIONS[rec.env][1][0]}, "
            f"{ACTIONS[rec.env][1][1]}), r: the reward, G: the reward-to-go Σ γ^k r (γ = {rec.gamma:g}).")
+    zoom = None
     if is_pong:
         sub += (" Rows per step: the frame (dashed: the rows preprocess keeps), preprocess(frame) (white = 1), and the "
                 "network input preprocess(frame_t) − preprocess(frame_t−1) (blue +1, orange −1).")
+    elif rec.observations is not None and len(rec.observations) >= n and np.abs(rec.observations[:n, 0]).max() < 1.0:
+        zoom = CARTPOLE_ZOOM  # the cart stays near the middle: show the middle of the track, so the pole's tilt is visible
+        sub += " Frames zoomed on the middle half of the track (|x|\u00a0≤\u00a01.2) and the pole."
     lines = textwrap.wrap(sub, 150)
     if is_pong:
         fig = plt.figure(figsize=(7.5, 10.6))
         head = 0.02 + 0.012 * len(lines)  # the title and the subtitle lines, as a fraction of the height
-        outer = fig.add_gridspec(2, cols, hspace=0.30, wspace=0.12, top=1 - head - 0.035, bottom=0.025, left=0.02, right=0.98)
+        outer = fig.add_gridspec(2, cols, hspace=0.16, wspace=0.12, top=1 - head - 0.035, bottom=0.025, left=0.02, right=0.98)
     else:
         fig = plt.figure(figsize=(7.5, 4.4))
         head = 0.045 + 0.035 * len(lines)
-        outer = fig.add_gridspec(2, cols, hspace=0.78, wspace=0.08, top=1 - head - 0.085, bottom=0.12, left=0.02, right=0.98)
+        outer = fig.add_gridspec(2, cols, hspace=0.62, wspace=0.08, top=1 - head - 0.085, bottom=0.12, left=0.02, right=0.98)
     for i in range(n):
         row, col = divmod(i, cols)
         label = _step_label(rec, i, returns)
@@ -442,10 +449,13 @@ def first_steps_figure(rec: Recording, path: Path, title: str, steps: int = 10) 
                 _frame_axes(a, plotting)
         else:
             ax = fig.add_subplot(outer[row, col])
-            ax.imshow(rec.frames[i], interpolation="bilinear")
+            frame = rec.frames[i] if zoom is None else rec.frames[i][zoom[0]:zoom[1], zoom[2]:zoom[3]]
+            ax.imshow(frame, interpolation="bilinear")
             ax.set_title(label, fontsize=6.5, pad=3, linespacing=1.15)
             x, xd, th, thd = rec.observations[i]
-            ax.set_xlabel(f"x = {x:.3f}  ẋ = {xd:.2f}\nθ = {np.degrees(th):.1f}°  θ̇ = {thd:.2f}", fontsize=6.5, labelpad=2)
+            # mathtext dots: the font has no combining dot over θ, so "θ̇" would print as a second "θ"
+            ax.set_xlabel(f"$x$ = {x:.3f}   $\\dot{{x}}$ = {xd:.2f}\n$\\theta$ = {np.degrees(th):.1f}°   "
+                          f"$\\dot{{\\theta}}$ = {thd:.2f}", fontsize=6.5, labelpad=2)
             _frame_axes(ax, plotting)
     fig.suptitle(title, x=0.02, ha="left", fontsize=11, fontweight="semibold", color=plotting.INK, y=0.99 if is_pong else 0.975)
     fig.text(0.02, 0.972 if is_pong else 0.925, "\n".join(lines), fontsize=7, color=plotting.INK_SECONDARY, va="top", linespacing=1.3)

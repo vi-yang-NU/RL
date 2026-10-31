@@ -19,6 +19,15 @@ PONG_ACTIONS = (2, 3)  # RIGHT, LEFT: the only Pong actions the policy may choos
 # Game time per agent step: CartPole-v1 integrates its physics with tau = 0.02 s; Pong-v5 repeats each action for
 # 4 of the Atari's 60 frames per second. (How long an episode "lasts" = steps × this.)
 SECONDS_PER_STEP = {"cartpole": 0.02, "pong": 4 / 60}
+# The policy's action index that means "right", for the per-episode action statistic in the training log (a collapse
+# onto one action shows as this fraction going to 0 or 1): Pong RIGHT = environment action 2 = policy index 0;
+# CartPole "push right" = action 1. Other environments (the toy ones) use index 1.
+RIGHT_INDEX = {"pong": 0, "cartpole": 1}
+RIGHT_LABEL = {"pong": "RIGHT (paddle up)", "cartpole": "push right"}
+
+
+def right_index(env_name: str, n_actions: int) -> int:
+    return RIGHT_INDEX.get(env_name, min(1, max(0, n_actions - 1)))
 PONG_FRAME = (80, 80)
 
 

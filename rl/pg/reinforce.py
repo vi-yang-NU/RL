@@ -9,7 +9,13 @@ so one Adam step minimises the surrogate loss -sum_t log pi(a_t|s_t) * (G_t - b_
 of a batch). b_t is the baseline (zero in Part 1; a baseline from rl/pg/baselines.py in Part 2). Weighting
 step t by the reward-to-go G_t instead of the whole-episode return keeps the estimator unbiased and lowers its
 variance; `--set reward_to_go=false` uses G_0 for every step, and `--set discount_grad=true` adds the gamma^t
-factor of the exact gradient of the discounted objective. See rl/pg/options.py for every option.
+factor of the exact gradient of the discounted objective. With an entropy bonus beta (`entropy_coef`, Pong's
+default 0.01) the objective gains beta * H(pi(.|s_t)) at every step, which keeps the policy from collapsing onto
+one action early. See rl/pg/options.py for every option.
+
+Every training episode is logged with its reward, length, the policy's mean entropy over its steps and the
+fraction of "right" actions (rl/pg/envs.py RIGHT_INDEX), so a collapse onto one action is visible in the log,
+the dashboard's live chart and the training-curve figure.
 
 Formal counterpart: lean/RLVerify/Returns.lean proves that the backward recursion used by `discounted_returns`
 equals the definition of G_t; lean/RLVerify/Baseline.lean proves that subtracting a baseline that does not
@@ -26,7 +32,7 @@ import torch
 from torch.distributions import Categorical
 
 from rl.outputs import ProgressLogger
-from rl.pg.envs import make_adapter
+from rl.pg.envs import make_adapter, right_index
 from rl.pg.options import Options, options_for
 
 
@@ -51,6 +57,7 @@ class Episode:
     observations: np.ndarray
     actions: np.ndarray
     rewards: np.ndarray
+    entropy: float = float("nan")  # mean entropy of pi(.|s_t) over the episode's steps (nats), when recorded
 
     @property
     def length(self) -> int:
@@ -115,10 +122,12 @@ def run_episode(
     """
     obs = adapter.reset(env, seed)
     observations, actions, rewards = [], [], []
+    entropy_sum = 0.0
     with torch.no_grad():
         while True:
-            logits = policy(torch.as_tensor(obs, device=device).unsqueeze(0))
-            action = int(logits.argmax(dim=-1).item() if greedy else Categorical(logits=logits).sample().item())
+            dist = Categorical(logits=policy(torch.as_tensor(obs, device=device).unsqueeze(0)))
+            action = int(dist.probs.argmax(dim=-1).item() if greedy else dist.sample().item())
+            entropy_sum += float(dist.entropy().item())
             next_obs, reward, done, _ = adapter.step(env, action)
             observations.append(obs)
             actions.append(action)
@@ -126,7 +135,8 @@ def run_episode(
             obs = next_obs
             if done or (max_steps and len(rewards) >= max_steps):
                 break
-    return Episode(np.stack(observations), np.asarray(actions, dtype=np.int64), np.asarray(rewards, dtype=np.float32))
+    return Episode(np.stack(observations), np.asarray(actions, dtype=np.int64), np.asarray(rewards, dtype=np.float32),
+                   entropy=entropy_sum / max(1, len(rewards)))
 
 
 def returns_for(rewards: Sequence[float], gamma: float, opts: Options) -> np.ndarray:
@@ -180,13 +190,13 @@ def policy_gradient_loss(
         std = adv.std(unbiased=False)
         adv = (adv - adv.mean()) / (std if std > 1e-8 else 1.0)
     loss = -(logp * adv).sum() / len(episodes)
-    if opts.entropy_coef:
-        loss = loss - opts.entropy_coef * ent.mean()
+    if opts.entropy_coef:  # the bonus is per step, like the policy-gradient term: -beta * sum_t H(pi(.|s_t)) / episodes
+        loss = loss - opts.entropy_coef * ent.sum() / len(episodes)
     stats = {
         "loss": float(loss.item()),
         "advantage_mean": float(raw_adv.mean().item()),
         "advantage_std": float(raw_adv.std(unbiased=False).item()) if raw_adv.numel() > 1 else 0.0,
-        "entropy": float(ent.mean().item()),
+        "batch_entropy": float(ent.mean().item()),
     }
     return loss, stats, (torch.cat(obs_all), torch.cat(returns_all), torch.cat(t_all))
 
@@ -227,6 +237,7 @@ def train(cfg: TrainConfig, env: Any, policy: torch.nn.Module, baseline: Any, lo
     rewards: list[float] = []
     batch: list[Episode] = []
     stats: dict[str, float] = {}
+    right = right_index(cfg.env, adapter.n_actions)
     for episode in range(1, cfg.episodes + 1):
         ep = run_episode(env, adapter, policy, device, max_steps=opts.max_steps, seed=cfg.seed if episode == 1 else None)
         rewards.append(ep.total_reward)
@@ -234,7 +245,8 @@ def train(cfg: TrainConfig, env: Any, policy: torch.nn.Module, baseline: Any, lo
         if len(batch) >= opts.batch_episodes or episode == cfg.episodes:
             stats = update(policy, optimizer, batch, cfg.gamma, baseline, opts, device)
             batch = []
-        logger.log(episode, ep.total_reward, steps=ep.length, **stats)
+        logger.log(episode, ep.total_reward, steps=ep.length, entropy=round(ep.entropy, 4),
+                   frac_right=round(float(np.mean(ep.actions == right)), 4) if ep.length else 0.0, **stats)
     return rewards
 
 

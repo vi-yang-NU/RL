@@ -123,7 +123,7 @@ QUESTIONS: list[Question] = [
         "pg1_pong", "pg1", "(b) Pong-v5, discount factor 0.99", f"{PONG} {PG_PLOTS}",
         figures=("part1_pong_train", "part1_pong_eval"), evals=("part1_pong",),
     ),
-    *_shared("pg1", validation_figures=("part1_cartpole_steps", "part1_pong_steps")),
+    *_shared("pg1", validation_figures=("pg1_tests_table", "part1_cartpole_steps", "part1_pong_steps")),
     # Policy Gradient Part 2
     Question(
         "pg2_baseline", "pg2", "Baseline: choice and implementation",
@@ -134,13 +134,13 @@ QUESTIONS: list[Question] = [
     Question("pg2_description", "pg2", "Solution overview", DESCRIPTION),
     Question(
         "pg2_cartpole", "pg2", "(a) CartPole-v1 with baseline", f"Repeat Part 1 (a) with your baseline. {PG_PLOTS}",
-        figures=("part2_cartpole_train", "part2_cartpole_eval"), evals=("part2_cartpole",),
+        figures=("part2_cartpole_train", "part2_cartpole_eval", "compare_cartpole"), evals=("part2_cartpole",),
     ),
     Question(
         "pg2_pong", "pg2", "(b) Pong-v5 with baseline", f"Repeat Part 1 (b) with your baseline. {PG_PLOTS}",
-        figures=("part2_pong_train", "part2_pong_eval"), evals=("part2_pong",),
+        figures=("part2_pong_train", "part2_pong_eval", "compare_pong"), evals=("part2_pong",),
     ),
-    *_shared("pg2", validation_figures=("part2_cartpole_steps", "part2_pong_steps")),
+    *_shared("pg2", validation_figures=("pg2_tests_table", "part2_cartpole_steps", "part2_pong_steps")),
 ]
 QUESTION_BY_ID = {q.id: q for q in QUESTIONS}
 

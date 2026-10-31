@@ -133,6 +133,29 @@ def plot_policy(
     return save(fig, path)
 
 
+def _decorate(ax, title: str, xlabel: str, ylabel: str, subtitle: str | None = None) -> None:
+    """Left-aligned title, optional subtitle and axis labels, as new_figure draws them."""
+    import textwrap
+
+    title = textwrap.fill(title, 62)
+    if subtitle:
+        subtitle = "\n".join(textwrap.fill(line, 92) for line in subtitle.splitlines())
+    ax.set_title(title, pad=(20 + 13 * subtitle.count("\n")) if subtitle else 8, linespacing=1.2)
+    if subtitle:
+        ax.text(0, 1.02, subtitle, transform=ax.transAxes, color=INK_SECONDARY, fontsize=9, va="bottom", linespacing=1.4)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+
+def _headroom(ax, lo: float, hi: float, top: float = 0.24, ticks_up_to: float | None = None) -> None:
+    """Y-limits from lo to hi with an empty band of `top` × the range above the data for a legend; tick labels
+    stop at `ticks_up_to` (default hi), so the band does not suggest values the data cannot take."""
+    span = (hi - lo) or 1.0
+    ax.set_ylim(lo - 0.04 * span, hi + top * span)
+    limit = hi if ticks_up_to is None else ticks_up_to
+    ax.set_yticks([t for t in ax.get_yticks() if lo - 0.04 * span - 1e-9 <= t <= limit + 1e-9])
+
+
 def plot_training_curve(
     rewards: Sequence[float],
     path: Path,
@@ -141,13 +164,59 @@ def plot_training_curve(
     window: int = 100,
     xlabel: str = "Training episode",
     ylabel: str = "Episode reward",
+    entropy: Sequence[float] | None = None,
+    frac_right: Sequence[float] | None = None,
+    right_label: str = "right",
+    n_actions: int = 2,
 ) -> Path:
-    episodes = np.arange(1, len(rewards) + 1)
-    fig, ax = new_figure(title, xlabel, ylabel, subtitle)
-    ax.plot(episodes, rewards, color=BLUE_LIGHT, linewidth=0.8, label="Episode reward")
-    ax.plot(episodes, moving_average(rewards, window), color=BLUE_DARK, linewidth=2, label=f"{window}-episode moving average")
-    ax.set_xlim(1, max(len(rewards), 2))
-    ax.legend(loc="best")
+    """The episode reward per training episode with its moving average and, when `entropy` and `frac_right` are
+    given (one value per episode), a second panel with the policy's entropy as a fraction of its maximum ln(n_actions)
+    and the fraction of "right" actions, where a collapse onto one action shows as the entropy falling to 0 while
+    the fraction goes to 0 or 1. Legends sit in a band left free above the data, so they never cover it."""
+    import textwrap
+
+    r = np.asarray(rewards, dtype=float)
+    episodes = np.arange(1, len(r) + 1)
+    extra = entropy is not None and frac_right is not None and len(entropy) == len(r) and len(r) > 0
+    apply_style()
+    if extra:
+        fig = plt.figure(figsize=(7.0, 6.8))
+        grid = fig.add_gridspec(2, 1, height_ratios=[3, 1.7], hspace=0.45)
+        ax = fig.add_subplot(grid[0])
+    else:
+        fig, ax = plt.subplots()
+    _decorate(ax, title, xlabel, ylabel, subtitle)
+    ax.plot(episodes, r, color=BLUE_LIGHT, linewidth=0.8, label="Episode reward")
+    ax.plot(episodes, moving_average(r, window), color=BLUE_DARK, linewidth=2, label=f"{window}-episode moving average")
+    ax.set_xlim(0, max(len(r), 2))
+    if len(r):
+        _headroom(ax, float(np.nanmin(r)), float(np.nanmax(r)))
+    ax.legend(loc="upper left", ncol=2)
+    if extra:
+        ax2 = fig.add_subplot(grid[1])
+        h_max = float(np.log(max(2, int(n_actions))))
+        h = np.asarray([np.nan if v is None else v for v in entropy], dtype=float) / h_max
+        f = np.asarray([np.nan if v is None else v for v in frac_right], dtype=float)
+        ax2.set_title(textwrap.fill("The policy during training: its entropy as a fraction of the maximum "
+                                    f"ln\u00a0{int(n_actions)} (1 = uniform) and the fraction of '{right_label}' actions", 72),
+                      fontsize=9, pad=6, linespacing=1.25)
+        ax2.plot(episodes, h, color=BLUE_LIGHT, linewidth=0.7)
+        ax2.plot(episodes, moving_average(np.nan_to_num(h, nan=0.0), window), color=BLUE_DARK, linewidth=2,
+                 label=f"entropy / ln {int(n_actions)}")
+        ax2.plot(episodes, f, color="#f5b08a", linewidth=0.7)
+        ax2.plot(episodes, moving_average(np.nan_to_num(f, nan=0.0), window), color=SERIES[1], linewidth=2,
+                 label=f"fraction of '{right_label}'")
+        ax2.axhline(0.5, color=MUTED, linewidth=0.8, linestyle=(0, (2, 3)))
+        ax2.set_xlim(0, max(len(r), 2))
+        ax2.set_ylim(-0.04, 1.36)
+        ax2.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+        ax2.set_xlabel(xlabel)
+        ax2.set_ylabel("fraction")
+        ax2.legend(loc="upper left", ncol=2, fontsize=8.5)
+        ax2.text(0, -0.36, textwrap.fill(f"Thin lines: each episode; thick lines: the {window}-episode moving average; dotted: "
+                                         "0.5. A collapse onto one action shows as the entropy falling to 0 while the "
+                                         "fraction goes to 0 or 1.", 98),
+                 transform=ax2.transAxes, fontsize=8, color=INK_SECONDARY, va="top", linespacing=1.3)
     return save(fig, path)
 
 
@@ -174,6 +243,12 @@ def _integer_edges(lo: float, hi: float, target: int = 25) -> np.ndarray:
     return edges
 
 
+def _percent(count: int, total: int) -> str:
+    """A share as a percentage: whole numbers, one decimal below 1 % so a single episode does not read as 0 %."""
+    p = 100 * count / total
+    return f"{p:.0f}%" if p >= 1 or p == 0 else f"{p:.1f}%"
+
+
 def plot_reward_histogram(
     rewards: Sequence[float],
     path: Path,
@@ -193,8 +268,9 @@ def plot_reward_histogram(
     `value_range` is the range of rewards the environment makes possible (e.g. (0, 500) for CartPole-v1, (−21, 21)
     for Pong-v5): the axis shows all of it with both ends marked, so a single bar at one end reads as "the best
     possible" or "the worst possible" instead of a bar in empty space. `integer` picks bins whose edges fall
-    between integers (one per integer when the range is short). When there are at most five distinct rewards every
-    bar is labelled with its count; `note` is printed under the figure (e.g. why every episode scored the same).
+    between integers (one per integer when the range is short). A single value gets its count written on its bar;
+    two to eight values are counted one by one in the statistics box (adjacent one-wide bars leave no room for
+    labels); `note` is printed under the figure (e.g. why every episode scored the same).
     """
     import textwrap
 
@@ -218,7 +294,7 @@ def plot_reward_histogram(
     ax2 = fig.add_subplot(grid[1])
     subtitle = subtitle or (f"{stats['episodes']} episodes rolled out with the trained policy · mean {mean:.2f} · "
                             f"standard deviation {std:.2f}\nmin {stats['min']:g} · max {stats['max']:g} · median {stats['median']:g}"
-                            + (f" · {length_text}" if length_text else ""))
+                            + (f"\n{length_text}" if length_text else ""))
     subtitle = "\n".join(textwrap.fill(line, 92) for line in subtitle.splitlines())
     ax.set_title(textwrap.fill(title, 62), pad=20 + 13 * subtitle.count("\n"), linespacing=1.2)
     ax.text(0, 1.02, subtitle, transform=ax.transAxes, color=INK_SECONDARY, fontsize=9, va="bottom", linespacing=1.4)
@@ -232,20 +308,27 @@ def plot_reward_histogram(
     if value_range:
         ax.axvline(lo, color=INK_SECONDARY, linewidth=1, linestyle=(0, (2, 3)), label=f"Lowest and highest possible ({lo:g}, {hi:g})")
         ax.axvline(hi, color=INK_SECONDARY, linewidth=1, linestyle=(0, (2, 3)))
-    if stats["distinct"] <= 5:  # few distinct rewards: say how many episodes each bar holds
+    if stats["distinct"] == 1:  # one value: say how many episodes the bar holds (more values: counts in the box)
         for x, c in zip((edges[:-1] + edges[1:]) / 2, counts):
             if c:  # a bar at either end of the range gets its label pulled inside the axes
                 ha = "left" if x < lo + 0.06 * span else "right" if x > hi - 0.06 * span else "center"
                 x = lo - 0.5 if ha == "left" else hi + 0.5 if ha == "right" else x
-                ax.text(x, c * 1.01, f"{c} ({100 * c / len(r):.0f}%)", ha=ha, va="bottom", fontsize=8.5, color=INK, fontweight="semibold")
+                ax.text(x, c * 1.02, f"{c} episode{'s' if c != 1 else ''} ({100 * c / len(r):.0f}%)", ha=ha, va="bottom",
+                        fontsize=8.5, color=INK, fontweight="semibold", zorder=6,  # on a patch, so the lines don't cross it
+                        bbox={"boxstyle": "square,pad=0.2", "facecolor": SURFACE, "edgecolor": "none"})
     ax.set_xlim(lo - 0.03 * span - (0.5 if integer else 0), hi + 0.03 * span + (0.5 if integer else 0))
     ax.set_ylim(0, counts.max() * 1.22)
     ax.grid(axis="x", visible=False)
     box = (f"n = {stats['episodes']}\nmean {mean:.2f}\nstd {std:.2f}\nmin {stats['min']:g} · max {stats['max']:g}\n"
            f"median {stats['median']:g}\n{stats['distinct']} distinct value" + ("s" if stats["distinct"] != 1 else ""))
-    at_left = mean > (lo + hi) / 2  # put the box where the bars are not
-    ax.text(0.02 if at_left else 0.98, 0.95, box, transform=ax.transAxes, ha="left" if at_left else "right", va="top",
-            fontsize=8.5, color=INK, linespacing=1.35, family="monospace",
+    if 2 <= stats["distinct"] <= 8:  # a few values, often in adjacent bars too narrow to label: count each one here
+        values, value_counts = np.unique(r, return_counts=True)
+        width = max(len(f"{v:g}") for v in values)
+        box += "\nepisodes per reward:" + "".join(f"\n{v:>{width}g}: {c:>3d} ({_percent(c, len(r))})"
+                                                   for v, c in zip(values, value_counts))
+    at_left = mean > (lo + hi) / 2  # put the box where the bars are not, clear of the lowest/highest-possible lines
+    ax.text(0.065 if at_left else 0.935, 0.95, box, transform=ax.transAxes, ha="left" if at_left else "right", va="top",
+            fontsize=8.5, color=INK, linespacing=1.35, family="monospace", multialignment="left",
             bbox={"boxstyle": "round,pad=0.45", "facecolor": SURFACE, "edgecolor": GRID})
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=8.5)  # between the two panels
 
@@ -256,8 +339,9 @@ def plot_reward_histogram(
     ax2.set_ylim(lo - 0.08 * span, hi + 0.08 * span)
     ax2.set_xlabel("Evaluation episode")
     ax2.set_ylabel("Reward")
-    if note:
-        fig.text(0.01, -0.01, "\n".join(textwrap.wrap(note, 118)), fontsize=8.5, color=INK_SECONDARY, va="top", linespacing=1.35)
+    if note:  # under the figure, aligned with the plots' left edge
+        ax2.text(0, -0.62, "\n".join(textwrap.wrap(note, 100)), transform=ax2.transAxes, fontsize=8.5, color=INK_SECONDARY,
+                 va="top", linespacing=1.35)
     return save(fig, path), mean, std
 
 
@@ -282,4 +366,72 @@ def plot_series(
         ax.set_yscale("log")
     if len(series) > 1:
         ax.legend(loc="best")
+    return save(fig, path)
+
+
+def plot_baseline_comparison(
+    runs: Sequence[Mapping],
+    path: Path,
+    title: str,
+    subtitle: str | None = None,
+    window: int = 100,
+    note: str | None = None,
+) -> Path:
+    """Runs of the same problem side by side, e.g. Part 1 (no baseline) against Part 2 (with a baseline). Each run is
+    a mapping with "label", "rewards" (one per training episode) and optionally "weights": the root mean square of
+    the per-step weights on ∇ log π in each episode (G_t without a baseline, G_t − b_t with one), drawn in a second
+    panel on a log scale, where a baseline that reduces the variance of the gradient estimate sits lower."""
+    import textwrap
+
+    with_weights = [run for run in runs if run.get("weights") is not None and len(run["weights"])]
+    apply_style()
+    if with_weights:
+        fig = plt.figure(figsize=(7.0, 6.8))
+        grid = fig.add_gridspec(2, 1, height_ratios=[3, 2], hspace=0.45)
+        ax = fig.add_subplot(grid[0])
+    else:
+        fig, ax = plt.subplots()
+    _decorate(ax, title, "Training episode", "Episode reward", subtitle)
+    lo, hi, longest = np.inf, -np.inf, 2
+    for color, run in zip(SERIES, runs):
+        r = np.asarray(run["rewards"], dtype=float)
+        if not len(r):
+            continue
+        x = np.arange(1, len(r) + 1)
+        ma = moving_average(r, window)
+        ax.plot(x, r, color=color, linewidth=0.6, alpha=0.2)
+        ax.plot(x, ma, color=color, linewidth=2.2,
+                label=f"{run['label']}: last {min(window, len(r))} episodes average {ma[-1]:.1f}")
+        lo, hi, longest = min(lo, float(np.nanmin(r))), max(hi, float(np.nanmax(r))), max(longest, len(r))
+    ax.set_xlim(0, longest)
+    if np.isfinite(lo):
+        _headroom(ax, lo, hi, top=0.3)
+    ax.legend(loc="upper left", fontsize=8.5)
+    if with_weights:
+        ax2 = fig.add_subplot(grid[1])
+        ax2.set_title(textwrap.fill("Size of the weights on ∇ log π(a_t|s_t) in each update: the root mean square of "
+                                    "G_t (no baseline) or of G_t − b(s_t) (baseline), log scale", 72),
+                      fontsize=9, pad=6, linespacing=1.25)
+        top = 0.0
+        for color, run in zip(SERIES, runs):
+            w = run.get("weights")
+            if w is None or not len(w):
+                continue
+            w = np.asarray(w, dtype=float)
+            x = np.arange(1, len(w) + 1)
+            ax2.plot(x, w, color=color, linewidth=0.6, alpha=0.25)
+            ax2.plot(x, moving_average(w, window), color=color, linewidth=2.2,
+                     label=f"{run['label']}: mean {np.nanmean(w):.2f}")
+            top = max(top, float(np.nanmax(w)))
+        ax2.set_yscale("log")
+        bottom = ax2.get_ylim()[0]
+        ax2.set_ylim(bottom, top * 12)  # a band above the lines for the legend
+        ax2.set_xlim(0, longest)
+        ax2.set_xlabel("Training episode")
+        ax2.set_ylabel("rms of the weights")
+        ax2.legend(loc="upper left", fontsize=8.5, ncol=1)
+    if note:
+        anchor = ax2 if with_weights else ax
+        anchor.text(0, -0.36 if with_weights else -0.2, "\n".join(textwrap.wrap(note, 98)), transform=anchor.transAxes,
+                    fontsize=8, color=INK_SECONDARY, va="top", linespacing=1.3)
     return save(fig, path)

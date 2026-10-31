@@ -327,6 +327,13 @@ def jobs_panel(tab: str, target) -> None:
             st.line_chart(df, x="episode", y=["episode reward", "100-episode moving average"],
                           color=[BLUE_LIGHT, BLUE_DARK], x_label="Training episode", y_label="Episode reward")
             st.caption(f"{len(df)} episodes logged · last reward {df['episode reward'].iloc[-1]:.1f}")
+            if "entropy" in df.columns and "frac_right" in df.columns:
+                policy_df = df[["episode", "entropy", "frac_right"]].rename(
+                    columns={"entropy": "policy entropy (nats; ln 2 ≈ 0.69 = uniform)", "frac_right": "fraction of RIGHT / push-right actions"})
+                st.line_chart(policy_df, x="episode", y=list(policy_df.columns[1:]), color=[BLUE_DARK, "#eb6834"],
+                              x_label="Training episode", y_label="")
+                st.caption("The policy itself, per episode: a collapse onto one action shows as the entropy falling to 0 while the "
+                           "fraction of RIGHT actions goes to 0 or 1.")
     st.code(dd.job_tail(target, name, 200) or "(log is empty)", language=None)
 
 
@@ -448,15 +455,25 @@ def answer_box(q: Question, saved: dict) -> None:
 
 
 def show_figures(keys: tuple[str, ...]) -> None:
-    columns = st.columns(len(keys)) if len(keys) > 1 else st.columns([2, 1])[:1]
-    for column, key in zip(columns, keys):
-        fig = FIGURE_BY_KEY[key]
-        with column:
-            if fig.file.exists():
-                st.image(str(fig.file), caption=fig.caption)
-            else:
-                st.info(f"**Plot not generated yet.** {fig.caption}\n\nRun `{fig.command}` from the Run panel above, "
-                        "then *Download results*.")
+    """The figures of a question: a tall one (alt "full-page": a table or a tall collage) gets a row of its own at
+    two thirds of the width; other plots go two to a row."""
+    rows: list[list[str]] = []
+    for key in keys:
+        if (FIGURE_BY_KEY[key].alt == "full-page" or not rows or FIGURE_BY_KEY[rows[-1][0]].alt == "full-page"
+                or len(rows[-1]) == 2):
+            rows.append([key])
+        else:
+            rows[-1].append(key)
+    for row in rows:
+        columns = st.columns(len(row)) if len(row) > 1 else st.columns([2, 1])[:1]
+        for column, key in zip(columns, row):
+            fig = FIGURE_BY_KEY[key]
+            with column:
+                if fig.file.exists():
+                    st.image(str(fig.file), caption=fig.caption)
+                else:
+                    st.info(f"**Plot not generated yet.** {fig.caption}\n\nRun `{fig.command}` from the Run panel above, "
+                            "then *Download results*.")
 
 
 def show_eval(run: str) -> None:

@@ -12,10 +12,12 @@ to deepdish, runs the code there, and collects the plots, validation results and
 > **Status:** all algorithms are implemented (Section 2 solvers; REINFORCE with and without baselines), with
 > unit tests (`python run.py unittest`), validation experiments for each part (`python run.py tests`) and Lean
 > proofs of the properties they rely on (`lean/`, see [section 7](#7-formal-verification-with-lean)). The Part 1
-> runs in `results/pg/` were made on a laptop CPU with the handout's settings (CartPole-v1 reaches the 500-step
-> cap; Pong-v5 with Adam at 0.01 and no baseline collapses to a deterministic policy early and stays at −21, so a
-> longer run with a smaller learning rate, on deepdish, is the next step). Still to do: the Part 2 runs and the
-> written answers in the report.
+> runs in `results/pg/` were made on a laptop CPU. CartPole-v1 reaches the 500-step cap with the handout's settings.
+> Pong-v5 with the handout's Adam learning rate 0.01 collapsed onto one action within about 150 episodes and lost
+> every game 0 : 21 (that run is kept as `results/pg/part1_pong_lr0.01/`), so Pong now trains with learning rate
+> 10⁻⁴ and an entropy bonus of 0.01 per step, and every run logs the policy's entropy and its fraction of RIGHT
+> actions per episode (lower panel of the training curve, live chart in the dashboard). Still to do: the Pong runs
+> with these settings and the Part 2 runs on deepdish, and the written answers in the report.
 
 ```
 run.py               single entry point: python run.py {dp,pg,tests,report,check,ui,save}
@@ -28,7 +30,7 @@ lean/                Lean 4 proofs about the algorithms and the exact reference 
 ui/                  Streamlit dashboard and the deepdish connection code
 scripts/jobs.sh      background job runner (single GPU), used by the dashboard and from the terminal
 scripts/explore_collage.py  the report's collage of the explorer's first ten periods (headless Chrome)
-scripts/tests_table.py      the report's picture of the Section 2 validation-test summary table (headless Chrome)
+scripts/tests_table.py      the report's pictures of the validation-test summary tables (Section 2, Parts 1 and 2; headless Chrome)
 report/              questions from the handout, saved answers, run instructions, report builder, report.md/.pdf
 results/             everything the runs produce (figures and JSON are committed; checkpoints are not)
 ```
@@ -134,6 +136,8 @@ On your laptop, choose **Jobs run on: this computer** to run the same jobs local
 | `python run.py dp [--method enumeration\|value_iteration\|policy_iteration] [--set KEY=VALUE] [--tag NAME] [--backend numpy\|cuda] [--explorer FILE]` | Section 2 (a)–(c); `--set` changes any `ShuttleParams` field; `--tag` keeps that run (figures included) in `results/dp_NAME/` so the handout's results stay; `--backend cuda` uses the kernels in `rl/cuda`; `--explorer` also writes the interactive explorer page (below) for those parameters | `results/dp/` or `results/dp_NAME/` |
 | `python run.py pg --part 1 --env cartpole` | Part 1 (a); `--env pong` for (b) | `results/pg/part1_cartpole/` |
 | `python run.py pg --part 2 --env pong [--baseline value\|mean\|time]` | Part 2 with a baseline (default `value`) | `results/pg/part2_pong/` |
+| `python run.py pg --part 2 --env cartpole --compare` | Part 1 (no baseline) against Part 2 (baseline) from the two finished runs' logs: rewards and the size of the weights on ∇ log π; drawn automatically after either run | `results/pg/compare_cartpole.png` |
+| `python run.py pg --part 2 --env cartpole --replot` | redraw a finished run's figures (training curve, histogram, first-steps figure, comparison) from its saved numbers, without training | the run's folder |
 | `python run.py play --env cartpole\|pong [--run part1_pong\|--untrained] [--speed X] [--greedy] [--seed N]` | the real game live in a window with the learned policy at the controls; the arrow keys take over (Pong: the paddle; CartPole: the cart), A hands back, Space pauses, R restarts, G toggles greedy actions, +/− change the speed, Q quits | a window |
 | `python run.py watch --env cartpole\|pong [--run part1_pong] [--seed N] [--steps N] [--greedy] [--out FILE] [--save FILE.npz] [--figure FILE.png]` | one episode of the real environment, frame by frame, as the viewer page the dashboard's **Watch the game** panel shows (below); `--run` plays with a finished run's `policy.pt`, otherwise an untrained policy plays | `results/pg/watch_<env>.html` |
 | `python run.py tests --section dp\|pg1\|pg2\|all [-k text] [--list]` | validation experiments | `results/tests/<section>.json` |
@@ -144,13 +148,15 @@ On your laptop, choose **Jobs run on: this computer** to run the same jobs local
 | `python run.py deepdish [-n N] [--connect\|--disconnect]` | your deepdish settings (`.env`, `DEEPDISH_*` variables) with where each comes from, the ssh target and every server's connection status; `--connect` opens the shared SSH connection without the dashboard | console |
 | `python run.py save [-m "message"] [--no-push] [--no-report]` | commit every change and push it to GitHub in one step; rebuilds the report first when the answers or results are newer than it, and pulls GitHub's newer commits before pushing | the repository on GitHub |
 
-`pg` options: `--episodes`, `--lr` (default 0.01, as in the handout), `--gamma` (default 0.95 CartPole / 0.99 Pong),
+`pg` options: `--episodes`, `--lr` (default 0.01 for CartPole, as in the handout; 10⁻⁴ for Pong, where 0.01 collapsed the
+policy onto one action within about 150 episodes, see `DEFAULT_LR` in `rl/pg/run.py`), `--gamma` (default 0.95 CartPole / 0.99 Pong),
 `--eval-episodes` (default 500), `--seed`, `--device auto|cpu|cuda|mps` (`cuda` and `mps` fail if the GPU is not
 available; the policy, the baseline network and every tensor they touch are placed on that device, and the run
 prints the GPU it uses), `--tag NAME` (keeps runs side by side in
 `results/pg/part1_cartpole_NAME/`), `--eval-only` (re-evaluate the saved `policy.pt`), and `--set KEY=VALUE`
 (repeatable) for every tunable listed in `rl/pg/options.py`: `hidden=[128,64]`, `arch=cnn` (Pong), `frame_diff`,
-`batch_episodes`, `normalize`, `reward_to_go`, `discount_grad`, `entropy_coef`, `max_grad_norm`, `max_steps`,
+`batch_episodes`, `normalize`, `reward_to_go`, `discount_grad`, `entropy_coef` (an entropy bonus per step; Pong's default is
+0.01, CartPole's 0), `max_grad_norm`, `max_steps`,
 `baseline_lr`, `baseline_hidden`, `baseline_epochs`, `baseline_decay`, `kernels`, `cpu_threads` (CPU runs use 2
 PyTorch threads by default: the tiny per-step forward passes get slower with more), `eval_greedy`, `log_every`.
 Quote lists in zsh: `--set 'hidden=[128,64]'`.
@@ -161,6 +167,7 @@ lasted in steps with the seconds of game time per step, and a note when every ep
 `training_curve.png` and `eval_histogram.png`, then
 `episode.npz` (one episode played by the trained policy, every frame and what the network saw and did, for the
 dashboard's **Watch the game** panel; about 0.3–1 MB) and `first_steps.png` (its first ten steps, a figure for the report).
+Once both parts of an environment have finished, `results/pg/compare_<env>.png` sets them side by side for Part 2.
 
 ## 5. What is implemented, and how to change the problems
 
@@ -411,7 +418,7 @@ pandoc and LaTeX are not needed.
 The Section 2 validation answer opens with a picture of the validation-test summary table (one row per test:
 what it checks, how it validates, the pass criterion and the result). Its rows are the Markdown table in
 `report/dp_tests_table.md`; `python scripts/tests_table.py` sets it in the report's typeface in headless Chrome and
-saves `results/dp/tests_table.png`, which the report and the dashboard show above the harness's results. To change
+saves `results/dp/tests_table.png`, which the report and the dashboard show above the harness's results; `report/pg1_tests_table.md` and `report/pg2_tests_table.md` are the same tables for the policy-gradient parts (`python scripts/tests_table.py --source report/pg1_tests_table.md --out results/pg/pg1_tests_table.png`, likewise for pg2). To change
 the table, edit the Markdown file and rerun the script.
 
 The questions themselves live in `report/questions.py`.

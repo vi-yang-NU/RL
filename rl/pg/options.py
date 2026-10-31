@@ -26,7 +26,8 @@ class Options:
     discount_grad: bool = False  # also weight step t by gamma^t: the exact gradient of the discounted objective
     normalize: bool = False  # standardise the advantages within each update (mean 0, standard deviation 1)
     batch_episodes: int = 1  # episodes collected per Adam step
-    entropy_coef: float = 0.0  # entropy bonus added to the objective
+    entropy_coef: float = 0.0  # entropy bonus beta: the objective gains beta * H(pi(.|s_t)) at every step, so the policy
+    #                            keeps exploring instead of collapsing onto one action (Pong default 0.01, see DEFAULTS_BY_ENV)
     max_grad_norm: float = 0.0  # clip the gradient norm to this when > 0
     max_steps: int = 1000  # an episode ends when the environment says so or after this many steps (0 = no cap);
     #                       CartPole-v1 truncates itself at 500. Pong's default is 10000 (DEFAULTS_BY_ENV): a game
@@ -50,7 +51,9 @@ class Options:
 
 DEFAULTS_BY_ENV: dict[str, dict[str, Any]] = {
     "cartpole": {},
-    "pong": {"hidden": (200,), "max_steps": 10_000},
+    # Pong: with the handout's learning rate 0.01 and no bonus the policy collapsed onto one action within ~150 episodes
+    # (every game lost 0 : 21); the bonus, with the smaller learning rate in rl/pg/run.py DEFAULT_LR, prevents that.
+    "pong": {"hidden": (200,), "max_steps": 10_000, "entropy_coef": 0.01},
 }
 
 

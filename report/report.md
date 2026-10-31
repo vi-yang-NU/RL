@@ -71,7 +71,7 @@ Assume the number of people can't exceed 200, and use discount rate of 0.95 (and
 2. Value iteration: Repeat Bellman on one value table until it converges then read the best policy off the table, time = infinite. 
 3. Policy iteration: evaluate and greedy change policy and stop when policy stops changing 
 
-For optimal implementation, I have also asked claude to generate the cuda files which will generate the grids on the cores and be able to generate faster results with its instructions compared to python
+For fun, to have optimal execution of the code, the solvers also have GPU versions, which we checked against the Python ones to make sure they are valid, but will run faster
 
 ### MDP formulation
 
@@ -206,11 +206,10 @@ Using FFNN techniques, we'll implement our network and use Gradient ascent (give
 
 Markov Decision Process means 5 things we should define: 1. state 2. action 3. transition 4. cost and 5. objective Reward
 
-State: The state is the amount of people that are currently on the platform A
-Action: Action space is 2, Discrete(2)
-Transition:  No transition! This is not defined in either Pong or Cartpole 
-Cost: 
-Our objective function is to win the game or maximize the total score achieved during the game
+1. State: CartPole the state is 4 numbers, for pong the state is 
+2. Action: Action space is 2, Discrete(2); for pong the action space is Discrete(6): No operation, Fire, Right, Left, Rightfire, Leftfire, the agent will only choose between two, right or left so instead it would be Discrete(2)  
+3. Transition: We are not given the transition due to the high dimensionality of the space I'm assuming 
+4/5. Cost/obj: Cost in this case is reward as our objective is "win the game" or get the most amount of points at each time step so max(reward_t)
 
 ### (a) CartPole-v1, discount factor 0.95
 
@@ -218,7 +217,7 @@ Our objective function is to win the game or maximize the total score achieved d
 
 ![](../results/pg/part1_cartpole/training_curve.png)
 
-*Figure 6. Part 1 (a), CartPole-v1: the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes.*
+*Figure 6. Part 1 (a), CartPole-v1: the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes. The lower panel shows the policy itself per episode: its entropy and the fraction of push-right actions.*
 
 ![](../results/pg/part1_cartpole/eval_histogram.png)
 
@@ -226,7 +225,7 @@ Our objective function is to win the game or maximize the total score achieved d
 
 **Evaluation over 500 episodes:** mean reward = 500.00, standard deviation = 0.00.
 
-*Answer pending.*
+Learning rate being 0.01 seems to be really high, and there's instability in our training. With a standard deviation of 0 and having 500 seems to be a suspicious result, and could use further probing in the future. It seems to have learned the optimal policy however, seeing the part 1 histogram on the right we seemed to have converged on our episode rewards through our policy, and for entropy being at 50% tells us were like 90% sure of the correct actions we need to do
 
 ### (b) Pong-v5, discount factor 0.99
 
@@ -234,33 +233,40 @@ Our objective function is to win the game or maximize the total score achieved d
 
 ![](../results/pg/part1_pong/training_curve.png)
 
-*Figure 8. Part 1 (b), Pong-v5: the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes.*
+*Figure 8. Part 1 (b), Pong-v5: the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes. The lower panel shows the policy itself per episode: its entropy and the fraction of RIGHT actions, where a collapse onto one action would show. Trained with Adam at learning rate 10⁻⁴ instead of the handout's 0.01, plus an entropy bonus of 0.01 per step: with 0.01 and no bonus the policy collapsed onto a single action within about 150 episodes and lost every game 0 : 21 (results/pg/part1_pong_lr0.01).*
 
 ![](../results/pg/part1_pong/eval_histogram.png)
 
 *Figure 9. Part 1 (b), Pong-v5: histogram of the 500 episode rewards (500 episodes rolled out with the trained policy), with the mean and the standard deviation (also the minimum, maximum and median), over the whole range of rewards the game allows; below it, the same 500 rewards in the order the episodes were played.*
 
-**Evaluation over 500 episodes:** mean reward = -21.00, standard deviation = 0.00.
+**Evaluation over 500 episodes:** mean reward = -20.09, standard deviation = 0.98.
 
-*Answer pending.*
+I fixed an issue where the gradient just collapsed by introducing entropy and encouraging the model to not just rely on one action, that being said it seems liek the policy is still kind of random, it seems like the entropy stayed at around 1 the entire time (and ended at 0.98), which does just tell us it's a coin flip whether we do the right action for the optimal policy. But that being said it seems like Right and Left is still chosen at around half of the time, which is better than our entire gradient collapsing, and us just choosing one action to do. 
+
+I believe to solve the pong problem we need to introduce more features to the RL model- specifically some sort of time based encoding value or some sort of way for us to track the velocity of the ball at the position it was in.
 
 ### Edge cases
 
 > What edge cases may arise from the problem and how did you handle them? Document the edge cases of the problem that you considered and explain how you ensured that your solution has handled them correctly.
 
-*Answer pending.*
+- To prevent the gradient collapsing for Pong (i.e. we had the gradient collapse, and to solve that, we lowered learning rate to 1e-4, added the entropy bonus so policy doesn't pick only 1 action and stops trying out the other action and tries out the other actions, additionally logging so we can see where the collapse is as well. 
+-
 
 ### Tests for validating the correctness of your algorithm
 
 > Beyond asking AI, how do you know that your algorithm is working correctly? Test whether your implementation is behaving as predicted. For example, you may change certain parameters or the structure of the problem and see if the output matches your expectation. You may also reduce the stochasticity of the environment or policy so that the process is close to deterministic. You may also find it useful to isolate the first 10 steps and observe how the states, values, rewards, and policy interact at each step. Provide directions and documentation for how to execute validation and test experiments (what does each test do, how does it validate, etc). Provide quantitative and convincing evidence. (Not unit tests or basic bug fixes, such as checking the data format.)
 
+![full-page](../results/pg/pg1_tests_table.png)
+
+*Figure 10. Policy Gradient Part 1, validation: summary of the validation experiments G1–G7, with what each one checks, how it validates the algorithm, its pass criterion and the result observed (the table in report/pg1_tests_table.md). The harness's detailed results for each experiment follow.*
+
 ![](../results/pg/part1_cartpole/first_steps.png)
 
-*Figure 10. Part 1 (a), CartPole-v1: the first 10 steps of one episode played by the trained policy, with the action taken, the policy's probabilities, the reward and the reward-to-go at each step (the dashboard's "Watch the game" panel replays the whole episode).*
+*Figure 11. Part 1 (a), CartPole-v1: the first 10 steps of one episode played by the trained policy, with the action taken, the policy's probabilities, the reward and the reward-to-go at each step (the dashboard's "Watch the game" panel replays the whole episode).*
 
 ![full-page](../results/pg/part1_pong/first_steps.png)
 
-*Figure 11. Part 1 (b), Pong-v5: the first 10 steps of one episode played by the trained policy, with the action taken, the policy's probabilities, the reward and the reward-to-go at each step: the frame the environment gives, what the handout's preprocess function makes of it, and the frame difference the network receives (the dashboard's "Watch the game" panel replays the whole episode).*
+*Figure 12. Part 1 (b), Pong-v5: the first 10 steps of one episode played by the trained policy, with the action taken, the policy's probabilities, the reward and the reward-to-go at each step: the frame the environment gives, what the handout's preprocess function makes of it, and the frame difference the network receives (the dashboard's "Watch the game" panel replays the whole episode).*
 
 Validation results from `python run.py tests --section pg1` (last run 2026-10-26 12:35:40 on mlds-deepdish2):
 
@@ -282,13 +288,15 @@ Validation results from `python run.py tests --section pg1` (last run 2026-10-26
 - **CartPole-v1 learns within 200 episodes on the CPU**: mean reward, episodes 1-20 = 43.2, mean reward, episodes 251-300 = 206.1, evaluation mean (50 episodes) = 360.9, evaluation std = 44.99, training time (s) = 18.3
 - **Pong-v5 pipeline: preprocessing and the two-action restriction**: steps in the game = 921, game score (reward sum) = -20, fraction of frame differences with any non-zero pixel = 0.9881, seconds per step (CPU, untrained MLP) = 0.001
 
-*Answer pending.*
+An example is we ran the cartpole's first 10 and evaluated that the math made sense. Additionally we added some validation tests that can help verify if the policy was accurate.
 
 ### Additional validation with 3 more months
 
 > Given an additional 3 months (extended period), what other validation tests and experiments would you perform?
 
-*Answer pending.*
+- One of the points mentioned above is that it is quite suspicious that for 500 episodes we managed to converge on the maximum reward the entire time (aka for 10 seconds). I would test on increasing the amount of time this is ran- in addition to modifying the parameters so we could have more interesting results (i.e. making the system more complex so we learn a more interesting policy)
+- Adjusting our learning rate potentially could help (0.01) we could change it to a lower number
+- Learning rate of 0.01 completely went right when we trained the pong with it, and we had to change the learning rate to 0.0001. Additionally the training period could be extended, and that would also allow our system to perform better as it will have more data to train on (or we can do some sort of batch training as well)
 
 ## Policy Gradient: Part 2 (20 points)
 
@@ -296,51 +304,77 @@ Validation results from `python run.py tests --section pg1` (last run 2026-10-26
 
 > The training suffers from high variance of the rewards in the sampled episodes; using a baseline helps to reduce the variance. Repeat the experiments of Part 1 using a constant or non-constant baseline of your choice. Explain which baseline you have chosen and how you implemented it.
 
-*Answer pending.*
+Which baseline to choose: I choose a learned state-value baseline, which essentiall yis another network that we use to help us predict the discounted returns. This is better than constant baselines such as the average return, mostly because constants cannot tell the difference between the states, so with this network we then can create a policy gradient that can have different variation amoung states
 
 ### Solution overview
 
 > Provide a description of your solution and any corresponding plots.
 
-*Answer pending.*
+Baseline allows us to determine which actions we should take the loss on, so with the baseline we can then adjust the specific weights instead of updating the entire gradient. As we see from the part 2's test of the Cartpole, we were able to reduce the variance and introduce stability with the baseline. If we compare without baseline and with baseline, we can see that for training, we converge on the training dataset much faster in comparison to part 1- we reached the maximum reward at about 650 ish episodes.
 
 ### (a) CartPole-v1 with baseline
 
 > Repeat Part 1 (a) with your baseline. Plot the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes. When you finish training, roll out 500 episodes using your trained model. Plot the histogram of the 500 episode rewards and report the mean and the standard deviation.
 
-*Figure 12 (pending). Part 2 (a), CartPole-v1: the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes. Generate it with `python run.py pg --part 2 --env cartpole`.*
+![](../results/pg/part2_cartpole/training_curve.png)
 
-*Figure 13 (pending). Part 2 (a), CartPole-v1: histogram of the 500 episode rewards (500 episodes rolled out with the trained policy), with the mean and the standard deviation (also the minimum, maximum and median), over the whole range of rewards the game allows; below it, the same 500 rewards in the order the episodes were played. Generate it with `python run.py pg --part 2 --env cartpole`.*
+*Figure 13. Part 2 (a), CartPole-v1: the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes. The lower panel shows the policy itself per episode: its entropy and the fraction of push-right actions.*
 
-**Evaluation over 500 episodes:** mean and standard deviation pending.
+![](../results/pg/part2_cartpole/eval_histogram.png)
 
-*Answer pending.*
+*Figure 14. Part 2 (a), CartPole-v1: histogram of the 500 episode rewards (500 episodes rolled out with the trained policy), with the mean and the standard deviation (also the minimum, maximum and median), over the whole range of rewards the game allows; below it, the same 500 rewards in the order the episodes were played.*
+
+![](../results/pg/compare_cartpole.png)
+
+*Figure 15. Part 2 (a), CartPole-v1: the Part 1 run (no baseline) against the Part 2 run (value baseline V(s)), with the same seed, learning rate and discount factor. Top: the episode rewards and their 100-episode moving averages. Bottom: the root mean square of the weights that multiply ∇ log π(a_t|s_t) in each update, G_t without the baseline and G_t − V(s_t) with it (log scale); the lower the line, the smaller the variance of the gradient estimate, which is what the baseline is for.*
+
+**Evaluation over 500 episodes:** mean reward = 500.00, standard deviation = 0.00.
+
+From episodes 0-400 we can still see the model is training itself, but as we approach around 500-600 we slowly converged into the current policy. bottom left corner is our entropy which as we can see eventually intersects with our amount of "push right" actions. Generally speaking this is good, as  our entropy doesnt collapse to 0, and we're not choosing 1 policy over another policy all the time (and have zeroing out gradients)
 
 ### (b) Pong-v5 with baseline
 
 > Repeat Part 1 (b) with your baseline. Plot the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes. When you finish training, roll out 500 episodes using your trained model. Plot the histogram of the 500 episode rewards and report the mean and the standard deviation.
 
-*Figure 14 (pending). Part 2 (b), Pong-v5: the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes. Generate it with `python run.py pg --part 2 --env pong`.*
+![](../results/pg/part2_pong/training_curve.png)
 
-*Figure 15 (pending). Part 2 (b), Pong-v5: histogram of the 500 episode rewards (500 episodes rolled out with the trained policy), with the mean and the standard deviation (also the minimum, maximum and median), over the whole range of rewards the game allows; below it, the same 500 rewards in the order the episodes were played. Generate it with `python run.py pg --part 2 --env pong`.*
+*Figure 16. Part 2 (b), Pong-v5: the episode reward against the number of training episodes, overlaid with the moving average of the rewards over 100 episodes. The lower panel shows the policy itself per episode: its entropy and the fraction of RIGHT actions, where a collapse onto one action would show. Trained with Adam at learning rate 10⁻⁴ instead of the handout's 0.01, plus an entropy bonus of 0.01 per step: with 0.01 and no bonus the policy collapsed onto a single action within about 150 episodes and lost every game 0 : 21 (results/pg/part1_pong_lr0.01).*
 
-**Evaluation over 500 episodes:** mean and standard deviation pending.
+![](../results/pg/part2_pong/eval_histogram.png)
 
-*Answer pending.*
+*Figure 17. Part 2 (b), Pong-v5: histogram of the 500 episode rewards (500 episodes rolled out with the trained policy), with the mean and the standard deviation (also the minimum, maximum and median), over the whole range of rewards the game allows; below it, the same 500 rewards in the order the episodes were played.*
+
+![](../results/pg/compare_pong.png)
+
+*Figure 18. Part 2 (b), Pong-v5: the Part 1 run (no baseline) against the Part 2 run (value baseline V(s)), with the same seed, learning rate and discount factor. Top: the episode rewards and their 100-episode moving averages. Bottom: the root mean square of the weights that multiply ∇ log π(a_t|s_t) in each update, G_t without the baseline and G_t − V(s_t) with it (log scale); the lower the line, the smaller the variance of the gradient estimate, which is what the baseline is for.*
+
+**Evaluation over 500 episodes:** mean reward = -14.99, standard deviation = 2.57.
+
+**Learning rate.** As in Part 1, Pong-v5 uses Adam at 10⁻⁴ with an entropy bonus of 0.01 per step, because the handout's 0.01 collapsed the policy onto one action (see Part 1 (b)).
 
 ### Edge cases
 
 > What edge cases may arise from the problem and how did you handle them? Document the edge cases of the problem that you considered and explain how you ensured that your solution has handled them correctly.
 
-*Answer pending.*
+- it is possible that in our random initialization for our neural network for baseline, for it to create a induction bias that is really really bad, and that could potentially cause some problems within training. We address this by the lean proof baseline_unbiased covers this 
+- We would have an issue if the baseline depends on the action, however we only take the state as our input and not the action itself (as stated in the first statement) 
+-
 
 ### Tests for validating the correctness of your algorithm
 
 > Beyond asking AI, how do you know that your algorithm is working correctly? Test whether your implementation is behaving as predicted. For example, you may change certain parameters or the structure of the problem and see if the output matches your expectation. You may also reduce the stochasticity of the environment or policy so that the process is close to deterministic. You may also find it useful to isolate the first 10 steps and observe how the states, values, rewards, and policy interact at each step. Provide directions and documentation for how to execute validation and test experiments (what does each test do, how does it validate, etc). Provide quantitative and convincing evidence. (Not unit tests or basic bug fixes, such as checking the data format.)
 
-*Figure 16 (pending). Part 2 (a), CartPole-v1: the first 10 steps of one episode played by the trained policy, with the action taken, the policy's probabilities, the reward and the reward-to-go at each step (the dashboard's "Watch the game" panel replays the whole episode). Generate it with `python run.py pg --part 2 --env cartpole`.*
+![full-page](../results/pg/pg2_tests_table.png)
 
-*Figure 17 (pending). Part 2 (b), Pong-v5: the first 10 steps of one episode played by the trained policy, with the action taken, the policy's probabilities, the reward and the reward-to-go at each step: the frame the environment gives, what the handout's preprocess function makes of it, and the frame difference the network receives (the dashboard's "Watch the game" panel replays the whole episode). Generate it with `python run.py pg --part 2 --env pong`.*
+*Figure 19. Policy Gradient Part 2, validation: summary of the validation experiments B1–B5, with what each one checks, how it validates the baseline, its pass criterion and the result observed (the table in report/pg2_tests_table.md). The harness's detailed results for each experiment follow.*
+
+![](../results/pg/part2_cartpole/first_steps.png)
+
+*Figure 20. Part 2 (a), CartPole-v1: the first 10 steps of one episode played by the trained policy, with the action taken, the policy's probabilities, the reward and the reward-to-go at each step (the dashboard's "Watch the game" panel replays the whole episode).*
+
+![full-page](../results/pg/part2_pong/first_steps.png)
+
+*Figure 21. Part 2 (b), Pong-v5: the first 10 steps of one episode played by the trained policy, with the action taken, the policy's probabilities, the reward and the reward-to-go at each step: the frame the environment gives, what the handout's preprocess function makes of it, and the frame difference the network receives (the dashboard's "Watch the game" panel replays the whole episode).*
 
 Validation results from `python run.py tests --section pg2` (last run 2026-10-26 12:37:04 on mlds-deepdish2):
 
@@ -358,10 +392,14 @@ Validation results from `python run.py tests --section pg2` (last run 2026-10-26
 - **Learning curves with and without a baseline**: area under the learning curve: none = 0.9987, area under the learning curve: mean = 0.9987, area under the learning curve: value = 0.9687
 - **CartPole-v1 with the value baseline (200 episodes on the CPU)**: moving average, episodes 1-50 = 53.4, moving average, episodes 151-200 = 209.7, evaluation mean (50 episodes) = 500, rms(G − V(s)) / rms(G) on fresh episodes = 0.1249, final value loss = 5.534
 
-*Answer pending.*
+1. We know that the baseline does not bias the gradient as on a two arm bandit problem, we had 2000 gradient estimate without a baseline. The good baseline halved the variance (0.368 -> 0.194) while the bad baseline raied it from 51 x (18.8). Thus this is why we should learn the baseline rather than do some grid search for it.  
+2. Assuming a 3 arm bandit setup, where we have 3 different machines, the first one pulls 0.5, the second one is 1 and the third is 0 for rewrad. If the agent pulls the 0.5 lever multiple times then each pull will make it pull that one bandit more likely, until the point where it won't try the second bandit. So the question is with different runs, is it possible for us to find the best lever. Without a baseline given random seeds, we get around 6/10 runs, and with a baseline we were able to get it at around 8/10 runs- so it seems like it did improve. 
+3. Imagine a situation where we have 6 cells, the agent starts at left and the rightmost has reward of 1, and each move has 0.1 chance of going the wrong way. With the baseline we were able to move towards our goal state sooner, which implies that the baseline is indeed state dependent
+4. With the same example, using a constant return, we made the weights around 62% smaller, in comparison with our neural network, which brought in 81% smaller 
+5. Once we add in the baseline, it performs much better than untrained. After we froze the policy and played 50 games, all of the games lasted for the full 500 steps, and thus that is how we got our 500 evaluation average.
 
 ### Additional validation with 3 more months
 
 > Given an additional 3 months (extended period), what other validation tests and experiments would you perform?
 
-*Answer pending.*
+- There is a couple of deep learning techniques we could potentially apply in this Rl case- some ideas include some form of regularization or normalization for us to encourage certain learnings. Additionally I believe we can incorporate some of the more modern LLM tasks such as the transformers and multi-head attention for us to address some of the temporal encoding issues. I think that right now our states are very much just based on the training data (which in our case is running the simulation for a period of time). But similarly to the value and policy iteration (and policy gradients) all being DP problems, tells me that there may be a possibly interesting case if we were able to reference similar cases of for example for pong, when the enemy was somewhere on the top of the screen and I was on the bottom of the screen, and when the enemy was on top of screen and I was on top of the screen, and to carry over the k,v, values over to some decoder that will transfer the answer to our specific situation.

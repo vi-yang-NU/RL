@@ -9,6 +9,6 @@
   "device": "cpu",
   "eval_episodes": 500,
   "extra": {},
-  "host": "Vincents-Air",
-  "cuda_visible_devices": null
+  "host": "pa-dhcp-10-120-228-90.gp-vpn.northwestern.private",
+  "cuda_visible_devices": ""
 }
