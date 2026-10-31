@@ -70,6 +70,7 @@ class Figure:
     path: str  # relative to results/
     caption: str
     command: str  # the command that produces it
+    alt: str = ""  # Markdown alt text; "full-page": the PDF fits it into the room left under its text, up to 80 % of a page
 
     @property
     def file(self) -> Path:
@@ -86,14 +87,28 @@ def _pg_figures(part: int) -> list[Figure]:
             Figure(
                 f"{run}_train",
                 f"pg/{run}/training_curve.png",
-                f"{label}: episode reward versus training episode, with the 100-episode moving average.",
+                f"{label}: the episode reward against the number of training episodes, overlaid with the moving average "
+                f"of the rewards over 100 episodes.",
                 command,
             ),
             Figure(
                 f"{run}_eval",
                 f"pg/{run}/eval_histogram.png",
-                f"{label}: histogram of the rewards of 500 episodes rolled out with the trained policy.",
+                f"{label}: histogram of the 500 episode rewards (500 episodes rolled out with the trained policy), with the "
+                f"mean and the standard deviation (also the minimum, maximum and median), over the whole range of rewards "
+                f"the game allows; below it, the same 500 rewards in the order the episodes were played.",
                 command,
+            ),
+            Figure(
+                f"{run}_steps",
+                f"pg/{run}/first_steps.png",
+                f"{label}: the first 10 steps of one episode played by the trained policy, with the action taken, "
+                f"the policy's probabilities, the reward and the reward-to-go at each step"
+                + (": the frame the environment gives, what the handout's preprocess function makes of it, and the "
+                   "frame difference the network receives (the dashboard's \"Watch the game\" panel replays the whole episode)."
+                   if env == "pong" else " (the dashboard's \"Watch the game\" panel replays the whole episode)."),
+                command,
+                alt="full-page" if env == "pong" else "",
             ),
         ]
     return figures
@@ -118,6 +133,26 @@ FIGURES: dict[str, list[Figure]] = {
             "dp/policy_iteration_policy.png",
             "Section 2 (c), policy iteration: optimal policy versus number of customers waiting.",
             "python run.py dp --method policy_iteration",
+        ),
+        Figure(
+            "dp_tests_table",
+            "dp/tests_table.png",
+            "Section 2, validation: summary of the validation tests T1–T13, with what each one checks, how it validates "
+            "the solver, its pass criterion and the result observed (the table in report/dp_tests_table.md). The "
+            "harness's detailed results for each experiment follow.",
+            "python scripts/tests_table.py",
+            alt="full-page",
+        ),
+        Figure(
+            "dp_explore_steps",
+            "dp/explore_steps.png",
+            "Section 2, validation: the dashboard's \"Explore the problem\" panel at the start of each of the first 10 "
+            "periods under the optimal policy (handout parameters, empty station at t = 0, the explorer's default "
+            "seed): customers waiting, the policy's decision, the previous period's cost, the discounted cost so far "
+            "and the cost-to-go. The label above each screenshot gives that period's state, value, Q-values, action, "
+            "cost, arrivals and next state.",
+            "python scripts/explore_collage.py",
+            alt="full-page",
         ),
     ],
     "pg1": _pg_figures(1),

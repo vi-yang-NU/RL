@@ -1,6 +1,8 @@
 """Discussion answers and submission details, saved by the dashboard to report/answers.json.
 
 A question with a `source` (the run instructions) is answered by that Markdown file in report/ instead.
+An answer may place one of the registered figures (rl.outputs.FIGURES) where it is written with
+`{{figure:KEY}}`: the report numbers it in order with the others, the dashboard shows the image there.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ from report.questions import Question
 from rl.outputs import read_json, write_json
 
 REPORT_DIR = Path(__file__).resolve().parent
+FIGURE_TOKEN = re.compile(r"\{\{figure:([\w-]+)\}\}")
 ANSWERS_FILE = REPORT_DIR / "answers.json"
 META_FIELDS = {
     "name": "Name",

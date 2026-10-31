@@ -65,12 +65,18 @@ def apply_style() -> None:
 
 
 def new_figure(title: str, xlabel: str, ylabel: str, subtitle: str | None = None):
-    """A figure with one axes, a left-aligned title, optional subtitle and axis labels."""
+    """A figure with one axes, a left-aligned title, optional subtitle and axis labels. Long titles and subtitles
+    are wrapped so they stay within the figure's width instead of widening the saved image."""
+    import textwrap
+
     apply_style()
     fig, ax = plt.subplots()
-    ax.set_title(title, pad=20 if subtitle else 8)
+    title = textwrap.fill(title, 62)
     if subtitle:
-        ax.text(0, 1.02, subtitle, transform=ax.transAxes, color=INK_SECONDARY, fontsize=9, va="bottom")
+        subtitle = "\n".join(textwrap.fill(line, 92) for line in subtitle.splitlines())
+    ax.set_title(title, pad=(20 + 13 * subtitle.count("\n")) if subtitle else 8, linespacing=1.2)
+    if subtitle:
+        ax.text(0, 1.02, subtitle, transform=ax.transAxes, color=INK_SECONDARY, fontsize=9, va="bottom", linespacing=1.4)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     return fig, ax
@@ -145,6 +151,29 @@ def plot_training_curve(
     return save(fig, path)
 
 
+def reward_stats(rewards: Sequence[float]) -> dict:
+    """Summary of evaluation rewards: episodes, mean, std, min, max, median, distinct values, the most common value."""
+    r = np.asarray(rewards, dtype=float)
+    values, counts = np.unique(r, return_counts=True)
+    return {
+        "episodes": int(len(r)), "mean": float(r.mean()), "std": float(r.std()), "min": float(r.min()), "max": float(r.max()),
+        "median": float(np.median(r)), "distinct": int(len(values)),
+        "most_common": [float(values[counts.argmax()]), int(counts.max())],
+    }
+
+
+def _integer_edges(lo: float, hi: float, target: int = 25) -> np.ndarray:
+    """Bin edges for integer-valued rewards over [lo, hi]: one bin per integer when the range is short, otherwise a
+    round bin width (2, 5, 10, 20, 25, 50, ...) giving about `target` bins; every bin edge falls between integers."""
+    span = hi - lo
+    if span <= 2.4 * target:
+        return np.arange(lo - 0.5, hi + 1.5, 1.0)
+    width = next((w for w in (2, 5, 10, 20, 25, 50, 100, 200, 500, 1000) if span / w <= target), 1000)
+    edges = lo - 0.5 + width * np.arange(0, int(np.ceil(span / width)) + 1)
+    edges[-1] = max(edges[-1], hi + 0.5)
+    return edges
+
+
 def plot_reward_histogram(
     rewards: Sequence[float],
     path: Path,
@@ -153,16 +182,82 @@ def plot_reward_histogram(
     bins: int | str = "auto",
     xlabel: str = "Episode reward",
     ylabel: str = "Number of episodes",
+    value_range: tuple[float, float] | None = None,
+    integer: bool = False,
+    note: str | None = None,
+    length_text: str | None = None,
 ) -> tuple[Path, float, float]:
-    """Histogram with the mean and a ±1 standard deviation band. Returns (path, mean, std)."""
+    """Histogram of evaluation rewards with the statistics written on it, and the same rewards in the order they
+    were played underneath. Returns (path, mean, std).
+
+    `value_range` is the range of rewards the environment makes possible (e.g. (0, 500) for CartPole-v1, (−21, 21)
+    for Pong-v5): the axis shows all of it with both ends marked, so a single bar at one end reads as "the best
+    possible" or "the worst possible" instead of a bar in empty space. `integer` picks bins whose edges fall
+    between integers (one per integer when the range is short). When there are at most five distinct rewards every
+    bar is labelled with its count; `note` is printed under the figure (e.g. why every episode scored the same).
+    """
+    import textwrap
+
     r = np.asarray(rewards, dtype=float)
-    mean, std = float(r.mean()), float(r.std())
-    fig, ax = new_figure(title, xlabel, ylabel, subtitle or f"{len(r)} evaluation episodes")
-    ax.axvspan(mean - std, mean + std, color=MUTED, alpha=0.15, linewidth=0, label=f"±1 std ({std:.2f})")
-    ax.hist(r, bins=bins, color=SERIES[0], edgecolor=SURFACE, linewidth=1.5)
+    stats = reward_stats(r)
+    mean, std = stats["mean"], stats["std"]
+    lo, hi = (float(value_range[0]), float(value_range[1])) if value_range else (float(r.min()), float(r.max()))
+    if integer:
+        edges = _integer_edges(lo, hi)
+    elif value_range and lo < hi:
+        edges = np.linspace(lo, hi, 31)
+    else:
+        edges = np.histogram_bin_edges(r, bins=bins) if r.min() < r.max() else np.array([r.min() - 0.5, r.max() + 0.5])
+    counts, edges = np.histogram(r, bins=edges)
+    span = max(hi - lo, 1.0)
+
+    apply_style()
+    fig = plt.figure(figsize=(7.0, 5.4))
+    grid = fig.add_gridspec(2, 1, height_ratios=[3, 1.15], hspace=0.75)
+    ax = fig.add_subplot(grid[0])
+    ax2 = fig.add_subplot(grid[1])
+    subtitle = subtitle or (f"{stats['episodes']} episodes rolled out with the trained policy · mean {mean:.2f} · "
+                            f"standard deviation {std:.2f}\nmin {stats['min']:g} · max {stats['max']:g} · median {stats['median']:g}"
+                            + (f" · {length_text}" if length_text else ""))
+    subtitle = "\n".join(textwrap.fill(line, 92) for line in subtitle.splitlines())
+    ax.set_title(textwrap.fill(title, 62), pad=20 + 13 * subtitle.count("\n"), linespacing=1.2)
+    ax.text(0, 1.02, subtitle, transform=ax.transAxes, color=INK_SECONDARY, fontsize=9, va="bottom", linespacing=1.4)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    if std > 0:
+        ax.axvspan(mean - std, mean + std, color=MUTED, alpha=0.15, linewidth=0, label=f"±1 std ({std:.2f})")
+    ax.bar((edges[:-1] + edges[1:]) / 2, counts, width=np.diff(edges), color=SERIES[0], edgecolor=SURFACE, linewidth=1.0,
+           label="Episodes per bin")
     ax.axvline(mean, color=INK, linewidth=1.5, label=f"Mean ({mean:.2f})")
+    if value_range:
+        ax.axvline(lo, color=INK_SECONDARY, linewidth=1, linestyle=(0, (2, 3)), label=f"Lowest and highest possible ({lo:g}, {hi:g})")
+        ax.axvline(hi, color=INK_SECONDARY, linewidth=1, linestyle=(0, (2, 3)))
+    if stats["distinct"] <= 5:  # few distinct rewards: say how many episodes each bar holds
+        for x, c in zip((edges[:-1] + edges[1:]) / 2, counts):
+            if c:  # a bar at either end of the range gets its label pulled inside the axes
+                ha = "left" if x < lo + 0.06 * span else "right" if x > hi - 0.06 * span else "center"
+                x = lo - 0.5 if ha == "left" else hi + 0.5 if ha == "right" else x
+                ax.text(x, c * 1.01, f"{c} ({100 * c / len(r):.0f}%)", ha=ha, va="bottom", fontsize=8.5, color=INK, fontweight="semibold")
+    ax.set_xlim(lo - 0.03 * span - (0.5 if integer else 0), hi + 0.03 * span + (0.5 if integer else 0))
+    ax.set_ylim(0, counts.max() * 1.22)
     ax.grid(axis="x", visible=False)
-    ax.legend(loc="best")
+    box = (f"n = {stats['episodes']}\nmean {mean:.2f}\nstd {std:.2f}\nmin {stats['min']:g} · max {stats['max']:g}\n"
+           f"median {stats['median']:g}\n{stats['distinct']} distinct value" + ("s" if stats["distinct"] != 1 else ""))
+    at_left = mean > (lo + hi) / 2  # put the box where the bars are not
+    ax.text(0.02 if at_left else 0.98, 0.95, box, transform=ax.transAxes, ha="left" if at_left else "right", va="top",
+            fontsize=8.5, color=INK, linespacing=1.35, family="monospace",
+            bbox={"boxstyle": "round,pad=0.45", "facecolor": SURFACE, "edgecolor": GRID})
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=8.5)  # between the two panels
+
+    ax2.set_title("The same rewards in the order the episodes were played", fontsize=9, pad=6)
+    ax2.plot(np.arange(1, len(r) + 1), r, linestyle="none", marker=".", markersize=3, color=SERIES[0], alpha=0.85)
+    ax2.axhline(mean, color=INK, linewidth=1)
+    ax2.set_xlim(0, len(r) + 1)
+    ax2.set_ylim(lo - 0.08 * span, hi + 0.08 * span)
+    ax2.set_xlabel("Evaluation episode")
+    ax2.set_ylabel("Reward")
+    if note:
+        fig.text(0.01, -0.01, "\n".join(textwrap.wrap(note, 118)), fontsize=8.5, color=INK_SECONDARY, va="top", linespacing=1.35)
     return save(fig, path), mean, std
 
 

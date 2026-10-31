@@ -3,11 +3,14 @@
 
     python run.py dp                              Section 2: enumeration, value and policy iteration
     python run.py pg --part 1 --env cartpole      Policy gradient Part 1 / Part 2 (cartpole or pong)
+    python run.py watch --env pong [--run part1_pong]   record one episode, frame by frame, as a viewer page
+    python run.py play --env pong [--run part1_pong]    play the game live in a window: the policy at the controls, take over with the arrows
     python run.py tests --section dp              validation experiments (dp, pg1, pg2 or all)
     python run.py unittest [-k text]              unit tests and edge cases (tests/unit, seconds)
-    python run.py report                          rebuild report/report.md, report.pdf and instructions.pdf
+    python run.py report                          rebuild report/report.md and report.pdf
     python run.py check                           check packages, GPU and gym environments
     python run.py ui                              open the dashboard
+    python run.py deepdish [-n N] [--connect]     deepdish settings (.env), ssh target and connection status; open the shared connection
     python run.py save [-m "message"]             commit every change and push it to GitHub, in one step
 """
 from __future__ import annotations
@@ -24,11 +27,16 @@ sys.path.insert(0, str(ROOT))
 def main(argv: list[str] | None = None) -> int:
     from rl.dp import run as dp_run
     from rl.pg import run as pg_run
+    from rl.pg import play as pg_play
+    from rl.pg import watch as pg_watch
+    from ui import deepdish
 
     parser = argparse.ArgumentParser(description="MLDS Assignment 1: reinforcement learning")
     sub = parser.add_subparsers(dest="command", required=True)
     dp_run.add_arguments(sub.add_parser("dp", help="Section 2: value and policy iteration"))
     pg_run.add_arguments(sub.add_parser("pg", help="policy gradient, Part 1 or Part 2"))
+    pg_watch.add_arguments(sub.add_parser("watch", help="record one episode of CartPole-v1 or Pong-v5 frame by frame and write the viewer page"))
+    pg_play.add_arguments(sub.add_parser("play", help="play CartPole-v1 or Pong-v5 live in a window with the learned policy at the controls; take over with the arrow keys"))
     tests = sub.add_parser("tests", help="run validation experiments")
     tests.add_argument("--section", choices=["dp", "pg1", "pg2", "all"], default="all")
     tests.add_argument("-k", "--match", help="only run tests whose name or title contains this text")
@@ -36,10 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     unit = sub.add_parser("unittest", help="run the unit tests in tests/unit (seconds; standard library unittest)")
     unit.add_argument("-k", "--match", action="append", help="only tests whose name contains this text (repeatable)")
     unit.add_argument("-v", "--verbose", action="store_true")
-    sub.add_parser("report", help="rebuild report/report.md and the PDFs (report, run instructions)")
+    sub.add_parser("report", help="rebuild report/report.md and report/report.pdf")
     sub.add_parser("check", help="check packages, GPU and gym environments on this machine")
     ui = sub.add_parser("ui", help="open the dashboard (Streamlit)")
     ui.add_argument("--port", type=int, default=8501)
+    deepdish.add_arguments(sub.add_parser(
+        "deepdish", help="deepdish settings (.env, DEEPDISH_* variables) and connection status; --connect opens the shared SSH connection"))
     save = sub.add_parser("save", help="commit every change and push it to GitHub, in one step")
     save.add_argument("-m", "--message", help="commit message (default: the date and the folders that changed)")
     save.add_argument("--no-push", action="store_true", help="commit on this computer only")
@@ -51,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
         return dp_run.main(args)
     if args.command == "pg":
         return pg_run.main(args)
+    if args.command == "watch":
+        return pg_watch.main(args)
+    if args.command == "play":
+        return pg_play.main(args)
     if args.command == "tests":
         from tests import harness
 
@@ -74,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             pdfs = build_pdfs()
         except ImportError as e:
-            print(f"skipped the PDFs: {e} (pip install -r requirements-ui.txt)")
+            print(f"skipped the PDF: {e} (pip install -r requirements-ui.txt)")
             return 1
         for path in pdfs:
             print(f"wrote {path.relative_to(ROOT)}")
@@ -85,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         return check.main(args)
     if args.command == "ui":
         return run_ui(args.port)
+    if args.command == "deepdish":
+        return deepdish.main(args)
     if args.command == "save":
         from rl.save import save as save_all
 
@@ -108,7 +124,7 @@ def run_ui(port: int) -> int:
     fallback = (
         "If the page stays blank or shows a connection error: reload it once this line has appeared, open the URL\n"
         f"by hand, or start the dashboard on another port (python run.py ui --port {port + 1}). It is not needed to\n"
-        "grade: report/report.pdf has every answer, plot and test result (report/instructions.pdf, section 3)."
+        "grade: report/report.pdf has every answer, plot and test result."
     )
     if importlib.util.find_spec("streamlit") is None:
         print(f"The dashboard needs Streamlit: pip install -r requirements-ui.txt\n{fallback}", file=sys.stderr)

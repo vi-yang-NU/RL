@@ -16,6 +16,9 @@ import numpy as np
 ENV_IDS = {"cartpole": "CartPole-v1", "pong": "ALE/Pong-v5"}
 GAMMA = {"cartpole": 0.95, "pong": 0.99}  # discount factors given in the handout
 PONG_ACTIONS = (2, 3)  # RIGHT, LEFT: the only Pong actions the policy may choose between
+# Game time per agent step: CartPole-v1 integrates its physics with tau = 0.02 s; Pong-v5 repeats each action for
+# 4 of the Atari's 60 frames per second. (How long an episode "lasts" = steps × this.)
+SECONDS_PER_STEP = {"cartpole": 0.02, "pong": 4 / 60}
 PONG_FRAME = (80, 80)
 
 

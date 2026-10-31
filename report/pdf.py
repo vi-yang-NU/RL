@@ -1,9 +1,10 @@
-"""Markdown to PDF for the report and the run instructions, without pandoc or LaTeX.
+"""Markdown to PDF for the report, without pandoc or LaTeX.
 
 Covers the Markdown that report/build.py and report/instructions.md use: headings, paragraphs,
 **bold**, *italic*, `code`, links, bullet and numbered lists, fenced code blocks, tables,
-block quotes, images and horizontal rules. Text is set in DejaVu, the font matplotlib ships,
-so symbols such as γ, ∞ and → print.
+block quotes, images (alt text `full-page` lets a tall one take most of a page) and horizontal rules, and
+the list under a "Contents" heading becomes a table of contents with page numbers. Text is set in DejaVu, the font matplotlib ships, so symbols such as γ, ∞ and →
+print.
 """
 from __future__ import annotations
 
@@ -19,7 +20,9 @@ from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import HRFlowable, Image, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (BaseDocTemplate, Flowable, Frame, HRFlowable, Image, PageTemplate, Paragraph, Preformatted,
+                                Spacer, Table, TableStyle)
+from reportlab.platypus.tableofcontents import TableOfContents
 
 FONT_DIR = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
 SANS, MONO = "DejaVuSans", "DejaVuSansMono"
@@ -30,8 +33,11 @@ RULE = colors.HexColor("#d1d9e0")
 SHADE = colors.HexColor("#f6f8fa")
 MARGIN = 0.85 * inch
 WIDTH = LETTER[0] - 2 * MARGIN
+TOP_MARGIN, BOTTOM_MARGIN = 0.8 * inch, 0.85 * inch
+FRAME_HEIGHT = LETTER[1] - TOP_MARGIN - BOTTOM_MARGIN
 CELL_PAD = 5
 CODE_SIZE = 8.2
+CONTENTS = "Contents"  # an h2 with this text, followed by a list, is set as a table of contents with page numbers
 
 CODE_SPAN = re.compile(r"`([^`]+)`")
 LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
@@ -141,7 +147,8 @@ def _blocks(markdown: str):
             yield "hr", None
             i += 1
         elif IMAGE.fullmatch(s):
-            yield "image", IMAGE.fullmatch(s).group(2)
+            m = IMAGE.fullmatch(s)
+            yield "image", (m.group(1), m.group(2))
             i += 1
         elif s.startswith("|") and i + 1 < len(lines) and TABLE_RULE.fullmatch(lines[i + 1].strip()):
             rows, j = [_cells(line)], i + 2
@@ -231,6 +238,7 @@ def _boxed(flowables: list, background=None, bar=None) -> Table:
 
 
 def _image(path: Path, styles: dict[str, ParagraphStyle]):
+    """The image at up to 90 % of the text width and 42 % of the page height."""
     if not path.exists():
         return Paragraph(f"<i>Missing image: {escape(str(path))}</i>", styles["body"])
     w, h = ImageReader(str(path)).getSize()
@@ -240,10 +248,68 @@ def _image(path: Path, styles: dict[str, ParagraphStyle]):
     return image
 
 
+class _TallFigure(Flowable):
+    """A `full-page` image with its caption. It takes what is left of the current page when at least MIN_SHARE
+    of a page is free, so it sits under the text that introduces it; otherwise it moves to the next page and
+    gets up to MAX_SHARE of it. The caption is drawn with the image, so the two never part."""
+
+    MAX_SHARE, MIN_SHARE = 0.8, 0.45  # of the page height
+
+    def __init__(self, path: Path, caption: Paragraph | None):
+        super().__init__()
+        self.path, self.caption = str(path), caption
+        self.image_w, self.image_h = ImageReader(self.path).getSize()
+        self.hAlign = "CENTER"
+        self._layout = (0.0, 0.0, 0.0)
+        self._avail_width = WIDTH
+
+    def _fit(self, avail_width: float, avail_height: float) -> tuple[float, float, float]:
+        """(image width, image height, caption height with its gap) inside `avail_height`."""
+        caption_h = self.caption.wrap(avail_width, avail_height)[1] + 6 if self.caption else 0.0
+        scale = min(0.9 * WIDTH / self.image_w, (avail_height - caption_h) / self.image_h, self.MAX_SHARE * LETTER[1] / self.image_h)
+        return scale * self.image_w, scale * self.image_h, caption_h
+
+    def wrap(self, avail_width: float, avail_height: float) -> tuple[float, float]:
+        w, h, caption_h = self._fit(avail_width, avail_height)
+        if h < self.MIN_SHARE * LETTER[1] and self._fit(avail_width, FRAME_HEIGHT)[1] > 1.1 * h:
+            return avail_width, avail_height + 1  # too little room left here; a fresh page gives it more
+        self._layout, self._avail_width = (w, h, caption_h), avail_width
+        self.width, self.height = w, h + caption_h
+        return self.width, self.height
+
+    def draw(self) -> None:
+        w, h, caption_h = self._layout
+        self.canv.drawImage(self.path, 0, caption_h, width=w, height=h, mask="auto")
+        if self.caption:
+            self.caption.wrapOn(self.canv, self._avail_width, caption_h)
+            self.caption.drawOn(self.canv, (w - self._avail_width) / 2, 0)  # the caption spans the text width
+
+
+def _toc(styles: dict[str, ParagraphStyle]) -> TableOfContents:
+    """Entries for the h2 (bold) and h3 headings, with dot leaders and page numbers; multiBuild fills them in."""
+    toc = TableOfContents()
+    toc.levelStyles = [
+        ParagraphStyle("toc0", styles["body"], fontName=f"{SANS}-Bold", spaceBefore=7, spaceAfter=2),
+        ParagraphStyle("toc1", styles["body"], leftIndent=18, spaceAfter=1),
+    ]
+    toc.dotsMinLevel = 0
+    return toc
+
+
 def _flowables(markdown: str, base_dir: Path) -> list:
     styles = _styles()
     story: list = []
-    for kind, content in _blocks(markdown):
+    toc_next = False
+    blocks = list(_blocks(markdown))
+    i = 0
+    while i < len(blocks):
+        kind, content = blocks[i]
+        i += 1
+        if toc_next and kind == "list":  # the Markdown list under "## Contents" has no page numbers; this one does
+            story += [_toc(styles), Spacer(1, 8)]
+            toc_next = False
+            continue
+        toc_next = kind == "h2" and content.strip() == CONTENTS
         if kind[0] == "h":
             story.append(Paragraph(_inline(content), styles[kind]))
             if kind == "h1":
@@ -274,27 +340,48 @@ def _flowables(markdown: str, base_dir: Path) -> list:
                 story.append(Paragraph(_inline(_join(lines)), style, bulletText=bullet))
             story.append(Spacer(1, 5))
         elif kind == "image":
-            story += [_image(base_dir / content, styles), Spacer(1, 4)]
+            alt, src = content
+            path = base_dir / src
+            if alt.strip().lower() == "full-page" and path.exists():
+                caption = None
+                if i < len(blocks) and blocks[i][0] == "paragraph" and blocks[i][1][0].lstrip().startswith("*Figure"):
+                    caption = Paragraph(_inline(_join(blocks[i][1])), styles["body"])  # drawn with the image
+                    i += 1
+                story += [_TallFigure(path, caption), Spacer(1, 4)]
+            else:
+                story += [_image(path, styles), Spacer(1, 4)]
         elif kind == "hr":
             story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceBefore=4, spaceAfter=10))
     return story
 
 
-class _Document(SimpleDocTemplate):
-    """Adds a PDF outline (the viewer's sidebar) entry for every h1-h3 heading."""
+class _Document(BaseDocTemplate):
+    """One frame per page with a footer. Every h1-h3 heading gets an outline entry (the viewer's sidebar) and,
+    for h2 and h3, a table-of-contents entry; `multiBuild` renders again until the page numbers are stable."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, path: str, footer, **kwargs):
+        super().__init__(path, **kwargs)
+        frame = Frame(self.leftMargin, self.bottomMargin, self.width, self.height, id="page")
+        self.addPageTemplates([PageTemplate(id="page", frames=[frame], onPage=footer, pagesize=self.pagesize)])
         self._outline_level = -1
+
+    def beforeDocument(self) -> None:
+        self._outline_level = -1  # each pass starts the outline afresh
 
     def afterFlowable(self, flowable) -> None:
         name = getattr(getattr(flowable, "style", None), "name", "")
-        if name in ("h1", "h2", "h3") and isinstance(flowable, Paragraph):
-            level = min(int(name[1]) - 1, self._outline_level + 1)
-            key = f"heading-{id(flowable)}"
-            self.canv.bookmarkPage(key)
-            self.canv.addOutlineEntry(flowable.getPlainText(), key, level=level, closed=level > 0)
-            self._outline_level = level
+        if name not in ("h1", "h2", "h3") or not isinstance(flowable, Paragraph):
+            return
+        text = flowable.getPlainText()
+        if text == CONTENTS:
+            return
+        level = min(int(name[1]) - 1, self._outline_level + 1)
+        key = f"heading-{id(flowable)}"
+        self.canv.bookmarkPage(key)
+        self.canv.addOutlineEntry(text, key, level=level, closed=level > 0)
+        self._outline_level = level
+        if name != "h1":
+            self.notify("TOCEntry", (int(name[1]) - 2, escape(text), self.page, key))
 
 
 def markdown_to_pdf(markdown: str, path: Path, *, title: str, author: str = "", base_dir: Path | None = None) -> Path:
@@ -310,7 +397,7 @@ def markdown_to_pdf(markdown: str, path: Path, *, title: str, author: str = "", 
         canvas.restoreState()
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    doc = _Document(str(path), pagesize=LETTER, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=0.8 * inch,
-                    bottomMargin=0.85 * inch, title=title, author=author)
-    doc.build(_flowables(markdown, base_dir or path.parent), onFirstPage=footer, onLaterPages=footer)
+    doc = _Document(str(path), footer, pagesize=LETTER, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=TOP_MARGIN,
+                    bottomMargin=BOTTOM_MARGIN, title=title, author=author)
+    doc.multiBuild(_flowables(markdown, base_dir or path.parent))
     return path

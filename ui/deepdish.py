@@ -3,6 +3,11 @@
 Everything goes through the system `ssh` and `rsync`, so the dashboard uses the same keys,
 ~/.ssh/config aliases and shared connections as your terminal and VS Code.
 
+Settings come from config/deepdish.json, overlaid in turn with config/deepdish.local.json, .env
+(DEEPDISH_USER=..., see .env.example) and DEEPDISH_* variables in the process environment, so the
+same connection works from the dashboard, from `python run.py deepdish` and from any tool or platform
+that sets environment variables. The dashboard and setup.sh save your choices to .env.
+
 A server counts as connected when any of these hold:
   * this process runs on that deepdish machine (e.g. the dashboard was started over VS Code Remote-SSH),
   * an SSH ControlMaster socket for it is open (created by the dashboard, a terminal or VS Code),
@@ -17,7 +22,9 @@ import re
 import shlex
 import socket
 import subprocess
+import sys
 import tempfile
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +32,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FILE = ROOT / "config" / "deepdish.json"
 LOCAL_CONFIG_FILE = ROOT / "config" / "deepdish.local.json"
+ENV_FILE = ROOT / ".env"
+ENV_PREFIX = "DEEPDISH_"
+ENV_HEADER = ("# Your deepdish settings: ignored by git and never uploaded. .env.example lists every variable;\n"
+              "# a DEEPDISH_* variable set in the environment takes precedence over this file.\n")
 ASKPASS = Path(__file__).resolve().parent / "askpass.sh"
 JOB_FIELDS = ("name", "state", "exit", "pid", "gpu", "started", "host", "command")
 
@@ -34,18 +45,117 @@ EDITOR_RE = re.compile(r"visual studio code|code helper|vscode|\bcode\b|cursor|w
 
 # --- configuration -------------------------------------------------------------------------
 
-def load_config() -> dict:
-    """config/deepdish.json overlaid with your config/deepdish.local.json (not committed)."""
-    cfg = json.loads(CONFIG_FILE.read_text())
+def env_var(key: str) -> str:
+    """The environment variable that sets a config/deepdish.json key: user -> DEEPDISH_USER."""
+    return ENV_PREFIX + key.upper()
+
+
+def read_env_file(path: Path | None = None) -> dict[str, str]:
+    """The KEY=value lines of a .env file. Blank lines and comments are skipped, `export ` is allowed,
+    quotes around a value are removed and an unquoted value ends at a ` #` comment."""
+    path = ENV_FILE if path is None else path
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if not sep or not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+        values[key] = value
+    return values
+
+
+def _typed(base: dict, text: Mapping[str, str]) -> dict:
+    """The DEEPDISH_* entries of `text`, as settings with the types config/deepdish.json gives them
+    (lists are comma-separated). An empty value counts as unset."""
+    settings = {}
+    for key, like in base.items():
+        var = env_var(key)
+        value = text.get(var, "").strip()
+        if not value:
+            continue
+        try:
+            if isinstance(like, bool):
+                settings[key] = value.lower() in ("1", "true", "yes", "on")
+            elif isinstance(like, int):
+                settings[key] = int(value)
+            elif isinstance(like, list):
+                items = [item.strip() for item in value.split(",") if item.strip()]
+                settings[key] = [type(like[0])(item) for item in items] if like else items
+            else:
+                settings[key] = value
+        except ValueError as e:
+            raise ValueError(f"{var}={value!r} is not a valid {key} ({type(like).__name__} expected)") from e
+    return settings
+
+
+def config_layers(environ: Mapping[str, str] | None = None) -> list[tuple[str, dict]]:
+    """The settings layers, lowest priority first; each later layer overrides the keys it sets."""
+    environ = os.environ if environ is None else environ
+    base = json.loads(CONFIG_FILE.read_text())
+    layers = [("config/deepdish.json", base)]
     if LOCAL_CONFIG_FILE.exists():
-        cfg.update(json.loads(LOCAL_CONFIG_FILE.read_text()))
+        layers.append(("config/deepdish.local.json", json.loads(LOCAL_CONFIG_FILE.read_text())))
+    layers.append((".env", _typed(base, read_env_file())))
+    layers.append(("environment", _typed(base, {k: v for k, v in environ.items() if k.startswith(ENV_PREFIX)})))
+    return layers
+
+
+def load_config(environ: Mapping[str, str] | None = None) -> dict:
+    """config/deepdish.json overlaid with config/deepdish.local.json, .env and DEEPDISH_* environment variables."""
+    cfg: dict = {}
+    for _, layer in config_layers(environ):
+        cfg.update(layer)
     return cfg
 
 
-def save_local_config(**updates) -> None:
-    current = json.loads(LOCAL_CONFIG_FILE.read_text()) if LOCAL_CONFIG_FILE.exists() else {}
-    current.update(updates)
-    LOCAL_CONFIG_FILE.write_text(json.dumps(current, indent=2) + "\n")
+def setting_sources(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """For each setting, the layer its effective value comes from (a name from config_layers)."""
+    sources: dict[str, str] = {}
+    for name, layer in config_layers(environ):
+        for key in layer:
+            sources[key] = name
+    return sources
+
+
+def _env_line_key(line: str) -> str | None:
+    text = line.strip()
+    if not text or text.startswith("#") or "=" not in text:
+        return None
+    if text.startswith("export "):
+        text = text[len("export "):].lstrip()
+    return text.partition("=")[0].strip() or None
+
+
+def _env_text(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    text = ",".join(map(str, value)) if isinstance(value, list) else str(value)
+    return f'"{text}"' if any(c in text for c in " \t#\"\'") else text
+
+
+def save_settings(**updates) -> None:
+    """Remember settings in .env (DEEPDISH_USER=..., DEEPDISH_DEFAULT_SERVER=...). Other lines, comments
+    included, are kept; a variable already there is replaced in place."""
+    pending = {env_var(key): _env_text(value) for key, value in updates.items()}
+    lines = ENV_FILE.read_text().splitlines() if ENV_FILE.exists() else ENV_HEADER.rstrip("\n").splitlines()
+    out = []
+    for line in lines:
+        key = _env_line_key(line)
+        out.append(f"{key}={pending.pop(key)}" if key in pending else line)
+    out.extend(f"{key}={value}" for key, value in pending.items())
+    ENV_FILE.write_text("\n".join(out) + "\n")
 
 
 @dataclass(frozen=True)
@@ -58,6 +168,7 @@ class Server:
     control_path: str
     control_persist: str
     connect_timeout: int
+    identity_file: str = ""  # an SSH key to offer besides ssh's own choices (from the identity_file setting)
 
     @property
     def name(self) -> str:
@@ -69,6 +180,8 @@ class Server:
             "-o", "ServerAliveInterval=30",
             "-o", "StrictHostKeyChecking=accept-new",
         ]
+        if self.identity_file:
+            opts += ["-o", f"IdentityFile={self.identity_file}"]
         if not self.shared_control_path:
             opts += ["-o", f"ControlPath={self.control_path}"]
         # Only connect() opens a master. A master started from any other call would keep
@@ -115,6 +228,7 @@ def resolve_server(n: int, cfg: dict) -> Server:
         control_path=settings.get("controlpath", cfg["control_path"]),
         control_persist=cfg.get("control_persist", "4h"),
         connect_timeout=int(cfg.get("connect_timeout", 10)),
+        identity_file=cfg.get("identity_file") or "",
     )
     _RESOLVED[key] = server
     return server
@@ -475,3 +589,47 @@ def gpus(target) -> tuple[list[dict[str, str]], str]:
             rows.append({"index": parts[0], "name": parts[1], "memory used (MiB)": parts[2],
                          "memory total (MiB)": parts[3], "utilization (%)": parts[4]})
     return rows, ""
+
+
+# --- command line: python run.py deepdish ----------------------------------------------------
+
+def add_arguments(parser) -> None:
+    parser.add_argument("-n", "--server", type=int, metavar="N", help="server number (default: the default_server setting)")
+    parser.add_argument("--connect", action="store_true",
+                        help="open the shared SSH connection with your key, or with the NetID password typed at the prompt")
+    parser.add_argument("--disconnect", action="store_true", help="close the shared SSH connection")
+
+
+def main(args) -> int:
+    """Show every setting with the layer it comes from, how ssh reaches the chosen server and each server's
+    status; --connect/--disconnect manage the shared connection the dashboard and `ssh deepdishN` reuse."""
+    cfg = load_config()
+    sources = setting_sources()
+    print("settings         (config/deepdish.json < config/deepdish.local.json < .env < environment)")
+    for key, value in cfg.items():
+        if key == "upload_excludes":
+            continue
+        text = ",".join(map(str, value)) if isinstance(value, list) else str(value)
+        print(f"  {key:<16} {text or '(empty)':<42} {sources[key]}")
+    n = args.server or cfg.get("default_server") or cfg["servers"][0]
+    if n not in cfg["servers"]:
+        print(f"deepdish{n} is not one of the servers: {cfg['servers']}", file=sys.stderr)
+        return 2
+    server = resolve_server(n, cfg)
+    sharing = "on (~/.ssh/config)" if server.shared_control_path else f"dashboard only (ControlPath {server.control_path})"
+    print(f"ssh              {server.target} -> {server.user}@{server.hostname}; key "
+          f"{server.identity_file or '(ssh default)'}; connection sharing {sharing}")
+    if args.disconnect:
+        ok, message = disconnect(server)
+        print(message)
+        return 0 if ok else 1
+    if args.connect:
+        ok, message = connect(server)
+        if not ok and "did not accept an SSH key" in message and sys.stdin.isatty():
+            ok, message = connect(server, getpass.getpass(f"NetID password for {server.user}@{server.hostname}: "))
+        print(message)
+        return 0 if ok else 1
+    print("status")
+    for status in status_all(cfg):
+        print(f"  {status.server.name:<14} {status.summary}")
+    return 0

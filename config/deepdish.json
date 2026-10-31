@@ -3,6 +3,7 @@
   "alias_template": "deepdish{n}",
   "host_template": "mlds-deepdish{n}.ads.northwestern.edu",
   "user": "",
+  "identity_file": "",
   "default_server": 1,
   "remote_dir": "~/RL",
   "control_path": "~/.ssh/cm-%C",
@@ -16,6 +17,7 @@
     ".DS_Store",
     "results/",
     "logs/",
+    ".env",
     "config/deepdish.local.json",
     "*.pdf"
   ]

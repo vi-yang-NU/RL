@@ -121,11 +121,18 @@ mkdir -p results logs
 
 # --- SSH to deepdish (your computer only) ---------------------------------------------------------
 
-# ssh_block aliases <netid> | ssh_block sharing: ~/.ssh/config text built from config/deepdish.json
+# save_setting key value: remember a deepdish setting in .env (DEEPDISH_KEY=value; git ignores .env)
+save_setting() {
+  "$VENV_PY" -c 'import sys; from ui.deepdish import save_settings; save_settings(**{sys.argv[1]: sys.argv[2]})' "$1" "$2"
+  note "saved $1 '$2' to .env (DEEPDISH_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]'))"
+}
+
+# ssh_block aliases <netid> | ssh_block sharing: ~/.ssh/config text built from the deepdish settings
 ssh_block() {
   "$VENV_PY" - "$@" <<'EOF'
-import json, sys
-cfg = json.load(open("config/deepdish.json"))
+import sys
+from ui.deepdish import load_config
+cfg = load_config()
 alias, host = cfg["alias_template"], cfg["host_template"]
 if sys.argv[1] == "aliases":
     print("\n# >>> deepdish (added by RL assignment setup.sh) >>>")
@@ -145,22 +152,19 @@ setup_ssh() {
   alias_host=$(ssh -G deepdish1 2>/dev/null | awk '/^hostname /{print $2}')
   mkdir -p ~/.ssh && chmod 700 ~/.ssh
 
+  netid=$("$VENV_PY" -c 'from ui.deepdish import load_config; print(load_config().get("user", ""))')
   if [[ $alias_host != "deepdish1" && -n $alias_host ]]; then
     note "found the deepdish1-5 aliases in ~/.ssh/config (deepdish1 -> $alias_host)"
+    if [[ -z $netid ]]; then  # keep the NetID the aliases use in .env, so every tool sees the same one
+      netid=$(ssh -G deepdish1 2>/dev/null | awk '/^user /{print $2}')
+      [[ -n $netid ]] && save_setting user "$netid"
+    fi
   else
-    netid=$("$VENV_PY" -c 'import json,os; p="config/deepdish.local.json"; print(json.load(open(p)).get("user","") if os.path.exists(p) else "")')
     if [[ -z $netid && -t 0 && $ASSUME_YES == 0 ]]; then
       read -r -p "    Your Northwestern NetID (for ssh): " netid
     fi
     netid=${netid:-$USER}
-    "$VENV_PY" - "$netid" <<'EOF'
-import json, os, sys
-path = "config/deepdish.local.json"
-data = json.load(open(path)) if os.path.exists(path) else {}
-data["user"] = sys.argv[1]
-open(path, "w").write(json.dumps(data, indent=2) + "\n")
-EOF
-    note "saved NetID '$netid' to config/deepdish.local.json"
+    save_setting user "$netid"
     if ask "Add 'deepdish1'...'deepdish5' shortcuts to ~/.ssh/config (so 'ssh deepdish3' works)?" y; then
       [[ -f $cfg ]] && cp "$cfg" "$cfg.bak.$(date +%Y%m%d%H%M%S)"
       ssh_block aliases "$netid" >> "$cfg"

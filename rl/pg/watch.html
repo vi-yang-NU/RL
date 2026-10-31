@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en"__THEME_ATTR__>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watch the game</title>
+<style>
+/* One recorded episode of a gym environment, step by step: the frame (and for Pong what the network makes of
+   it), tiles for the step, controls, two charts over the episode and a table of the first ten steps. */
+:root {
+  color-scheme: light;
+  --bg: #ffffff; --surface: #fcfcfb; --card: #f4f5f7; --card-2: #e9ebef; --line: #e1e0d9; --axis: #c3c2b7;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --blue: #2a78d6; --blue-soft: #cde2fb; --orange: #eb6834; --yellow: #eda100; --good: #0ca30c; --critical: #d03b3b;
+  --screen: #141414; --focus: #2a78d6;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e1117; --surface: #1a1a19; --card: #1f2229; --card-2: #2b2f38; --line: #2c2c2a; --axis: #383835;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --blue: #3987e5; --blue-soft: #1c3a66; --orange: #d95926;
+    --yellow: #e0a52a; --good: #0ca30c; --critical: #e66767; --screen: #0a0a0a; --focus: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1117; --surface: #1a1a19; --card: #1f2229; --card-2: #2b2f38; --line: #2c2c2a; --axis: #383835;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --blue: #3987e5; --blue-soft: #1c3a66; --orange: #d95926;
+  --yellow: #e0a52a; --good: #0ca30c; --critical: #e66767; --screen: #0a0a0a; --focus: #3987e5;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* the hidden attribute must win over the display rules below */
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); }
+body { padding: 4px 2px 12px; }
+.viewer { display: flex; flex-direction: column; gap: 12px; max-width: 1180px; }
+h2, h3, p { margin: 0; }
+h2 { font-size: 15px; font-weight: 600; }
+h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.panel { background: var(--card); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.panel > h3 { margin-bottom: 8px; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.head .desc { color: var(--ink-2); }
+.muted { color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+.k1, .k2 { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin: 0 2px; }
+.k1 { background: var(--blue); } .k2 { background: var(--orange); }
+
+/* scene */
+.scene { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px 18px; }
+figure { margin: 0; min-width: 0; }
+figcaption { font-size: 11.5px; color: var(--ink-2); margin-top: 6px; max-width: 320px; }
+figcaption b { color: var(--ink); font-weight: 600; }
+figcaption code { font-family: var(--mono); font-size: 11px; }
+.imgbox { position: relative; display: inline-block; line-height: 0; border-radius: 6px; overflow: hidden; background: var(--screen); box-shadow: 0 0 0 1px var(--line); }
+.imgbox img { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.imgbox.dark { background: var(--screen); }
+.env-pong #frame { width: 320px; height: 420px; }
+.pipeline { display: flex; flex-wrap: wrap; gap: 14px 18px; }
+.pipeline figcaption { max-width: 240px; }
+.env-pong .pipeline img { width: 240px; height: 240px; }
+.env-cartpole #frame { width: 540px; max-width: 100%; height: auto; image-rendering: auto; }
+.env-cartpole #frameBox { background: #fff; }
+.crop { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--yellow); border-bottom: 2px dashed var(--yellow); pointer-events: none; }
+.crop span { position: absolute; right: 4px; top: 2px; font-size: 10px; line-height: 1.2; color: var(--yellow); background: rgba(0,0,0,0.55); padding: 1px 4px; border-radius: 3px; }
+.badge { position: absolute; left: 6px; top: 6px; font-size: 11px; line-height: 1.2; color: #fff; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px; }
+.badge.r { left: auto; right: 6px; }
+
+/* CartPole state bars */
+.state { display: grid; grid-template-columns: max-content 1fr max-content; gap: 6px 10px; align-items: center; min-width: 280px; flex: 1 1 280px; max-width: 420px; }
+.state .lab { color: var(--ink-2); font-size: 12px; }
+.state .val { font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; min-width: 84px; }
+.bar { position: relative; height: 12px; background: var(--card-2); border-radius: 6px; overflow: hidden; }
+.bar .mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--axis); }
+.bar .fill { position: absolute; top: 2px; bottom: 2px; background: var(--blue); border-radius: 4px; }
+.bar.over .fill { background: var(--critical); }
+.bar .lim { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--critical); opacity: 0.6; }
+.state .note { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-2); }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+.tile { background: var(--surface); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.tile .lab { font-size: 11px; color: var(--muted); }
+.tile .val { font-size: 20px; font-weight: 600; line-height: 1.2; margin-top: 2px; overflow-wrap: anywhere; }
+.tile .val.small { font-size: 15px; }
+.tile .val.a0 { color: var(--blue); } .tile .val.a1 { color: var(--orange); }
+.tile .sub { font-size: 11px; color: var(--ink-2); margin-top: 2px; overflow-wrap: anywhere; }
+.tile .val.plus { color: var(--good); } .tile .val.minus { color: var(--critical); }
+.pbars { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.pbar { display: grid; grid-template-columns: 64px 1fr 42px; gap: 6px; align-items: center; font-size: 11px; }
+.pbar .track { height: 8px; background: var(--card-2); border-radius: 4px; overflow: hidden; }
+.pbar .fill { height: 100%; border-radius: 4px; background: var(--blue); }
+.pbar.a1 .fill { background: var(--orange); }
+.pbar.taken { font-weight: 600; }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.group.grow { flex: 1 1 220px; }
+.group.grow input[type="range"] { flex: 1 1 120px; min-width: 100px; }
+.group > span.lab { color: var(--muted); font-size: 12px; }
+button, select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { background: var(--card-2); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--blue); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+input[type="range"] { accent-color: var(--blue); }
+.hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+/* charts */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
+.chart svg { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: none; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { stroke: var(--axis); stroke-width: 1; }
+.chart .tick { font-size: 10px; fill: var(--muted); font-family: var(--font); }
+.chart .lbl { font-size: 11px; fill: var(--ink-2); font-family: var(--font); }
+.chart .s1 { fill: none; stroke: var(--blue); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.chart .s2 { fill: none; stroke: var(--orange); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.chart .lim { stroke: var(--critical); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.7; }
+.chart .half { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .plus { stroke: var(--good); stroke-width: 1.5; } .chart .minus { stroke: var(--critical); stroke-width: 1.5; }
+.chart .cursor { stroke: var(--ink); stroke-width: 1.2; }
+.chart .dot { fill: var(--ink); stroke: var(--surface); stroke-width: 1.5; }
+.chart .act0 { fill: var(--blue); } .chart .act1 { fill: var(--orange); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--ink-2); margin-bottom: 4px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
+.legend i.k1 { background: var(--blue); } .legend i.k2 { background: var(--orange); } .legend i.kp { background: var(--good); } .legend i.km { background: var(--critical); } .legend i.kl { background: var(--critical); opacity: 0.7; }
+
+/* table */
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { padding: 3px 7px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+th { color: var(--muted); font-weight: 500; font-size: 11px; }
+th:first-child, td:first-child { text-align: left; }
+tr.pick { cursor: pointer; }
+tr.pick:hover td { background: var(--card-2); }
+tr.cur td { background: var(--card-2); font-weight: 600; }
+td.a0 { color: var(--blue); } td.a1 { color: var(--orange); }
+td.plus { color: var(--good); font-weight: 600; } td.minus { color: var(--critical); font-weight: 600; }
+.foot { font-size: 11.5px; color: var(--ink-2); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="viewer" id="viewer">
+  <div class="head">
+    <h2 id="title"></h2>
+    <span class="desc" id="desc"></span>
+  </div>
+
+  <section class="panel">
+    <div class="scene">
+      <figure>
+        <div class="imgbox" id="frameBox">
+          <img id="frame" alt="the frame the environment renders">
+          <div class="crop" id="crop" hidden><span>rows 35–194: what preprocess keeps</span></div>
+          <div class="badge" id="badgeT"></div>
+          <div class="badge r" id="badgeScore" hidden></div>
+        </div>
+        <figcaption id="frameCap"></figcaption>
+      </figure>
+      <div class="pipeline" id="pipeline" hidden>
+      <figure>
+        <div class="imgbox dark"><img id="pre" alt="the preprocessed 80 by 80 frame"></div>
+        <figcaption><b>preprocess(frame<sub>t</sub>)</b>, 80×80: crop rows 35–194, keep every 2nd pixel of the red channel,
+          erase the background (values 144 and 109), set everything else (paddles, ball) to 1.</figcaption>
+      </figure>
+      <figure>
+        <div class="imgbox dark"><img id="input" alt="the network input, the difference of two preprocessed frames"></div>
+        <figcaption><b>Network input x<sub>t</sub></b> = preprocess(frame<sub>t</sub>) − preprocess(frame<sub>t−1</sub>):
+          <i class="k1"></i> +1 where something is now, <i class="k2"></i> −1 where it was, so the motion is visible.
+          <span id="inputCount"></span></figcaption>
+      </figure>
+      </div>
+      <div class="state" id="state" hidden></div>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="controls">
+      <div class="group">
+        <button id="btnBack" title="One step back (←)">◀ Back</button>
+        <button id="btnStep" class="primary" title="Take the recorded step (→)">Step ▶</button>
+        <button id="btnPlay" title="Play / pause (space)">Play</button>
+        <button id="btnReset" title="Back to the first frame (Home)">Reset</button>
+      </div>
+      <div class="group">
+        <button id="btnReward" title="Jump to the next step with a non-zero reward">Next reward ▶▶</button>
+        <button id="btnEnd" title="Jump to the last frame (End)">End ▶▶|</button>
+      </div>
+      <div class="group">
+        <span class="lab">speed</span>
+        <select id="selSpeed">
+          <option value="0.25">¼× (slow motion)</option>
+          <option value="0.5">½×</option>
+          <option value="1" selected>1× (real time)</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+        </select>
+      </div>
+      <div class="group grow">
+        <input type="range" id="range" min="0" step="1" value="0" aria-label="step">
+        <span class="num" id="rangeLabel"></span>
+      </div>
+    </div>
+    <p class="hint" id="hint"></p>
+  </section>
+
+  <div class="charts">
+    <section class="panel chart">
+      <h3 id="chart1Title"></h3>
+      <div class="legend" id="leg1"></div>
+      <svg id="chart1" viewBox="0 0 520 200" role="img"></svg>
+    </section>
+    <section class="panel chart">
+      <h3 id="chart2Title"></h3>
+      <div class="legend" id="leg2"></div>
+      <svg id="chart2" viewBox="0 0 520 200" role="img"></svg>
+    </section>
+  </div>
+
+  <section class="panel" id="pointsPanel" hidden>
+    <h3>The points: who scored, and how long each rally lasted</h3>
+    <div class="scroll"><table id="pointsTable"></table></div>
+    <p class="foot" id="pointsFoot"></p>
+  </section>
+
+  <section class="panel">
+    <h3>The first 10 steps</h3>
+    <div class="scroll"><table id="table"></table></div>
+    <p class="foot" id="foot"></p>
+  </section>
+</div>
+
+<script>
+const DATA = __DATA__;
+</script>
+<script>
+(function () {
+  "use strict";
+  const D = DATA;
+  const T = D.steps;                       // steps shown: states 0 … T, actions 0 … T−1
+  const PONG = D.env === "pong";
+  const $ = function (id) { return document.getElementById(id); };
+  const SHORT = D.action_short, LABELS = D.action_labels;
+  const NS = "http://www.w3.org/2000/svg";
+  document.body.classList.add(PONG ? "env-pong" : "env-cartpole");
+
+  // Inside the dashboard this page is a same-origin iframe: follow the dashboard's own theme (see rl/dp/explore.html).
+  function syncThemeWithParent() {
+    try {
+      if (window.parent === window) return;
+      const doc = window.parent.document;
+      const candidates = [doc.querySelector('[data-testid="stApp"]'), doc.body, doc.documentElement];
+      for (let i = 0; i < candidates.length; i++) {
+        if (!candidates[i]) continue;
+        const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/.exec(window.parent.getComputedStyle(candidates[i]).backgroundColor);
+        if (!m || (m[4] !== undefined && Number(m[4]) === 0)) continue;
+        const luminance = 0.2126 * Number(m[1]) + 0.7152 * Number(m[2]) + 0.0722 * Number(m[3]);
+        document.documentElement.setAttribute("data-theme", luminance < 128 ? "dark" : "light");
+        return;
+      }
+    } catch (e) { /* a different origin: keep what the server chose */ }
+  }
+  syncThemeWithParent();
+  window.setInterval(syncThemeWithParent, 1500);
+
+  function fmt(x, d) {
+    if (x === null || x === undefined || Number.isNaN(x)) return "–";
+    d = d === undefined ? 2 : d;
+    return Number(x).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+  }
+  function fmtR(x) { return Number.isInteger(x) ? String(x) : fmt(x, 2); }
+  function gameTime(steps) {   // steps of the game as "51 s" or "2 min 10 s"
+    const s = steps * D.seconds_per_step;
+    if (s < 10) return s.toFixed(1) + " s";
+    if (s < 100) return Math.round(s) + " s";
+    const m = Math.floor(Math.round(s) / 60), r = Math.round(s) - 60 * m;
+    return m + " min " + r + " s";
+  }
+  function pointAt(t) {   // Pong: the point whose rally includes step t (t is the state index), and the previous one
+    if (!PONG || !D.points) return null;
+    for (const p of D.points) if (t < p.step) return p;
+    return null;
+  }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function deg(rad) { return rad * 180 / Math.PI; }
+  function cumulative() { const out = [0]; for (let t = 0; t < T; t++) out.push(out[t] + D.rewards[t]); return out; }
+  const CUM = cumulative();     // reward so far before step t (CUM[t]), CUM[T] = total
+
+  /* ---------------- state ---------------- */
+  const S = { t: 0, playing: false, timer: null, speed: 1 };
+
+  function interval() { return Math.max(8, 1000 / (D.fps * S.speed)); }
+  function setT(t) {
+    S.t = Math.max(0, Math.min(T, Math.round(Number(t) || 0)));
+    render();
+  }
+  function stop() { S.playing = false; if (S.timer) { clearTimeout(S.timer); S.timer = null; } $("btnPlay").textContent = "Play"; }
+  function tick() {
+    if (!S.playing) return;
+    if (S.t >= T) { stop(); render(); return; }
+    setT(S.t + 1);
+    S.timer = setTimeout(tick, interval());
+  }
+  function play() {
+    if (S.playing) { stop(); render(); return; }
+    if (S.t >= T) S.t = 0;
+    S.playing = true; $("btnPlay").textContent = "Pause";
+    S.timer = setTimeout(tick, interval());
+  }
+  function nextReward() {
+    for (let t = S.t; t < T; t++) if (D.rewards[t] !== 0) { stop(); setT(t + 1); return; }   // the frame after the point
+    stop(); setT(T);
+  }
+
+  /* ---------------- header ---------------- */
+  function renderHeader() {
+    $("title").textContent = D.env_label + " · " + D.env_id;
+    let desc = D.policy + (D.greedy ? " (greedy actions)" : "") + " · seed " + D.seed + " · ";
+    desc += D.episode_steps + " steps = " + gameTime(D.episode_steps) + " of game time, total reward " + fmtR(D.total_reward);
+    if (PONG) { const sc = D.score[D.score.length - 1]; desc += " (final score " + sc[0] + " : " + sc[1] + ")"; }
+    if (D.cut) desc += (D.steps < D.episode_steps ? " · showing the first " + D.steps + " steps" : " · cut off by the step cap");
+    $("desc").textContent = desc;
+    $("frameCap").innerHTML = PONG
+      ? "<b>Frame from the environment</b> (210×160 RGB): the observation of Pong-v5 and what <code>env.render()</code> returns. Dashed: the rows preprocess keeps."
+      : "<b>Frame from the environment</b>, <code>env.render()</code> of the state s<sub>t</sub> (600×400). The observation itself is the four numbers on the right.";
+    $("hint").textContent = D.note + " Keys: ← → step, space plays, Home/End jump.";
+    if (PONG) { $("pipeline").hidden = false; $("crop").hidden = false; $("badgeScore").hidden = false;
+      $("crop").style.top = (100 * D.crop[0] / D.frame_size[1]) + "%"; $("crop").style.height = (100 * (D.crop[1] - D.crop[0]) / D.frame_size[1]) + "%"; }
+    else { $("state").hidden = false; $("btnReward").hidden = true; }
+    $("range").max = T;
+  }
+
+  /* ---------------- scene ---------------- */
+  function renderScene() {
+    const t = S.t;
+    $("frame").src = D.frames[t];
+    $("badgeT").textContent = "t = " + t + (t === T ? " (final)" : "");
+    if (PONG) {
+      $("pre").src = D.pre[t]; $("input").src = D.inputs[t];
+      const c = D.input_counts[t];
+      $("inputCount").textContent = "Now: " + c[0] + " pixels at +1, " + c[1] + " at −1" + (t === 0 ? " (no previous frame yet, so x₀ = 0)." : ".");
+      const sc = D.score[t]; $("badgeScore").textContent = "score " + sc[0] + " : " + sc[1];
+    } else {
+      const o = D.observations[t];
+      const rows = [];
+      for (let i = 0; i < 4; i++) {
+        const lim = D.obs_limits[i], v = o[i];
+        const scale = lim !== null ? lim : (i === 1 ? 3 : 3.5);     // velocities: a fixed display scale
+        const frac = Math.max(-1, Math.min(1, v / scale));
+        const over = lim !== null && Math.abs(v) > lim;
+        const left = frac < 0 ? 50 + 50 * frac : 50, width = 50 * Math.abs(frac);
+        const shown = i === 2 ? fmt(deg(v), 1) + "°" : fmt(v, 3);
+        rows.push('<span class="lab">' + esc(D.obs_labels[i]) + '</span><div class="bar' + (over ? " over" : "") + '"><div class="mid"></div>' +
+          (lim !== null ? '<div class="lim" style="left:0"></div><div class="lim" style="right:0"></div>' : "") +
+          '<div class="fill" style="left:' + left + '%;width:' + width + '%"></div></div><span class="val">' + shown + "</span>");
+      }
+      rows.push('<span class="note">Bars run to the limit at which the episode ends: |x| = 2.4 and |θ| = 12°; the velocity bars use a fixed scale.</span>');
+      $("state").innerHTML = rows.join("");
+    }
+  }
+
+  /* ---------------- tiles ---------------- */
+  function tile(lab, val, cls, sub) {
+    return '<div class="tile"><div class="lab">' + lab + '</div><div class="val ' + (cls || "") + '">' + val + "</div>" + (sub ? '<div class="sub">' + sub + "</div>" : "") + "</div>";
+  }
+  function renderTiles() {
+    const t = S.t, done = t >= T;
+    const tiles = [tile("Step", t + ' <span class="muted" style="font-size:13px;font-weight:400">of ' + T + "</span>", "num", done ? "the final state, no action is taken" : "s<sub>t</sub> is the frame on the left")];
+    tiles.push(tile("Game time", gameTime(t), "num", PONG ? t + " steps × 4 frames at 60 frames/s" : t + " steps × 0.02 s"));
+    if (!done) {
+      const a = D.actions[t], p = D.probs[t];
+      tiles.push(tile("Action a<sub>t</sub>", esc(SHORT[a]), "a" + a, esc(LABELS[a]) + (PONG ? " · sent to the environment as action " + D.env_actions[t] : "")));
+      const bars = p.map(function (pi, i) {
+        return '<div class="pbar a' + i + (i === a ? " taken" : "") + '"><span>' + esc(SHORT[i]) + '</span><div class="track"><div class="fill" style="width:' + (100 * pi).toFixed(1) + '%"></div></div><span class="num">' + (100 * pi).toFixed(1) + "%</span></div>";
+      }).join("");
+      tiles.push('<div class="tile"><div class="lab">π(· | s<sub>t</sub>), the policy\'s softmax</div><div class="pbars">' + bars + "</div></div>");
+      const r = D.rewards[t];
+      const pt = pointAt(t);
+      const rally = pt ? " · rally " + (t + 1 - (pt.step - pt.rally)) + " of " + pt.rally + " steps" : "";
+      tiles.push(tile("Reward r<sub>t</sub>", fmtR(r), r > 0 ? "plus" : r < 0 ? "minus" : "", PONG ? (r > 0 ? "the agent scores" + rally : r < 0 ? "the opponent scores" + rally : "no point this step" + rally) : "1 per step the pole stays up"));
+      tiles.push(tile("Reward-to-go G<sub>t</sub>", fmt(D.returns[t], 2), "num", "Σ<sub>k≥t</sub> γ<sup>k−t</sup> r<sub>k</sub> with γ = " + D.gamma + ": the weight of log π(a<sub>t</sub>|s<sub>t</sub>) in the gradient"));
+    }
+    tiles.push(tile("Reward so far", fmtR(CUM[t]), "num", PONG ? "score " + D.score[t][0] + " : " + D.score[t][1] + (done ? " at the end of the game" : "") : (done ? "the episode's total" : "Σ<sub>k&lt;t</sub> r<sub>k</sub>")));
+    $("tiles").innerHTML = tiles.join("");
+  }
+
+  /* ---------------- controls ---------------- */
+  function renderControls() {
+    $("range").value = S.t;
+    $("rangeLabel").textContent = S.t + " / " + T;
+    $("btnBack").disabled = S.t <= 0;
+    $("btnStep").disabled = S.t >= T;
+    $("btnEnd").disabled = S.t >= T;
+    $("btnReward").disabled = S.t >= T;
+  }
+
+  /* ---------------- charts ---------------- */
+  const C = { W: 520, H: 200, l: 44, r: 12, t: 12, b: 28 };
+  function sx(t) { return C.l + (T > 0 ? t / T : 0) * (C.W - C.l - C.r); }
+  function el(name, attrs, text) {
+    const e = document.createElementNS(NS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function ticks(min, max, n) {
+    const span = max - min || 1, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(function (m) { return m * mag; }).find(function (s) { return span / s <= n; }) || mag;
+    const out = []; for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(Number(v.toFixed(10)));
+    return out;
+  }
+  function axes(svg, ymin, ymax, ylabel, yfmt) {
+    const sy = function (v) { return C.H - C.b - (v - ymin) / (ymax - ymin || 1) * (C.H - C.t - C.b); };
+    ticks(ymin, ymax, 4).forEach(function (v) {
+      svg.appendChild(el("line", { class: "grid", x1: C.l, x2: C.W - C.r, y1: sy(v), y2: sy(v) }));
+      svg.appendChild(el("text", { class: "tick", x: C.l - 6, y: sy(v) + 3, "text-anchor": "end" }, yfmt ? yfmt(v) : String(v)));
+    });
+    ticks(0, T, 6).forEach(function (t) {
+      svg.appendChild(el("text", { class: "tick", x: sx(t), y: C.H - C.b + 14, "text-anchor": "middle" }, String(t)));
+    });
+    svg.appendChild(el("line", { class: "axis", x1: C.l, x2: C.W - C.r, y1: C.H - C.b, y2: C.H - C.b }));
+    svg.appendChild(el("text", { class: "lbl", x: C.W - C.r, y: C.H - 4, "text-anchor": "end" }, "step t"));
+    svg.appendChild(el("text", { class: "lbl", x: C.l, y: C.t - 2 }, ylabel));
+    return sy;
+  }
+  function path(points) { return points.map(function (p, i) { return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join(""); }
+  function cursor(svg, sy, ymin, ymax) {
+    svg.appendChild(el("line", { class: "cursor", id: svg.id + "Cur", x1: sx(S.t), x2: sx(S.t), y1: sy(ymax), y2: sy(ymin) }));
+  }
+  function seekable(svg) {
+    let down = false;
+    const seek = function (ev) {
+      const rect = svg.getBoundingClientRect();
+      const x = (ev.clientX - rect.left) / rect.width * C.W;
+      stop(); setT((x - C.l) / (C.W - C.l - C.r) * T);
+    };
+    svg.addEventListener("pointerdown", function (ev) { down = true; svg.setPointerCapture(ev.pointerId); seek(ev); });
+    svg.addEventListener("pointermove", function (ev) { if (down) seek(ev); });
+    svg.addEventListener("pointerup", function () { down = false; });
+    svg.addEventListener("pointercancel", function () { down = false; });
+  }
+  let sy1, sy2, y1min, y1max;
+  function drawChart1() {
+    const svg = $("chart1"); svg.innerHTML = "";
+    if (PONG) {
+      $("chart1Title").textContent = "Reward so far and the points";
+      $("leg1").innerHTML = '<span><i class="k1"></i>Σ reward before step t</span><span><i class="kp"></i>+1: the agent scores</span><span><i class="km"></i>−1: the opponent scores</span>';
+      y1min = Math.min(0, Math.min.apply(null, CUM)) - 1; y1max = Math.max(0, Math.max.apply(null, CUM)) + 1;
+      sy1 = axes(svg, y1min, y1max, "reward", fmtR);
+      svg.appendChild(el("line", { class: "half", x1: C.l, x2: C.W - C.r, y1: sy1(0), y2: sy1(0) }));
+      for (let t = 0; t < T; t++) if (D.rewards[t] !== 0) {
+        svg.appendChild(el("line", { class: D.rewards[t] > 0 ? "plus" : "minus", x1: sx(t), x2: sx(t), y1: sy1(CUM[t]), y2: sy1(CUM[t + 1]) }));
+      }
+      const pts = []; for (let t = 0; t <= T; t++) { pts.push([sx(t), sy1(CUM[t])]); if (t < T) pts.push([sx(t + 1), sy1(CUM[t])]); }
+      svg.appendChild(el("path", { class: "s1", d: path(pts) }));
+    } else {
+      $("chart1Title").textContent = "The state over the episode";
+      $("leg1").innerHTML = '<span><i class="k1"></i>cart position x / 2.4</span><span><i class="k2"></i>pole angle θ / 12°</span><span><i class="kl"></i>±1: the episode ends</span>';
+      y1min = -1.25; y1max = 1.25;
+      sy1 = axes(svg, y1min, y1max, "fraction of the limit", function (v) { return fmt(v, 2); });
+      svg.appendChild(el("line", { class: "lim", x1: C.l, x2: C.W - C.r, y1: sy1(1), y2: sy1(1) }));
+      svg.appendChild(el("line", { class: "lim", x1: C.l, x2: C.W - C.r, y1: sy1(-1), y2: sy1(-1) }));
+      svg.appendChild(el("line", { class: "half", x1: C.l, x2: C.W - C.r, y1: sy1(0), y2: sy1(0) }));
+      const clamp = function (v) { return Math.max(y1min, Math.min(y1max, v)); };
+      svg.appendChild(el("path", { class: "s1", d: path(D.observations.map(function (o, t) { return [sx(t), sy1(clamp(o[0] / D.obs_limits[0]))]; })) }));
+      svg.appendChild(el("path", { class: "s2", d: path(D.observations.map(function (o, t) { return [sx(t), sy1(clamp(o[2] / D.obs_limits[2]))]; })) }));
+    }
+    cursor(svg, sy1, y1min, y1max);
+  }
+  function drawChart2() {
+    const svg = $("chart2"); svg.innerHTML = "";
+    $("chart2Title").textContent = "The policy's probabilities and the actions taken";
+    $("leg2").innerHTML = '<span><i class="k1"></i>π(' + esc(SHORT[1]) + ' | s<sub>t</sub>)</span><span>strip: the action taken, <i class="k1"></i>' + esc(SHORT[0]) + " <i class=\"k2\"></i>" + esc(SHORT[1]) + "</span>";
+    sy2 = axes(svg, 0, 1, "probability", function (v) { return fmt(v, 2); });
+    svg.appendChild(el("line", { class: "half", x1: C.l, x2: C.W - C.r, y1: sy2(0.5), y2: sy2(0.5) }));
+    // the actions taken as a strip of runs just above the axis
+    const y0 = C.H - C.b - 7;
+    for (let t = 0; t < T;) {
+      let u = t; while (u < T && D.actions[u] === D.actions[t]) u++;
+      svg.appendChild(el("rect", { class: "act" + D.actions[t], x: sx(t), y: y0, width: Math.max(0.6, sx(u) - sx(t)), height: 6 }));
+      t = u;
+    }
+    svg.appendChild(el("path", { class: "s1", d: path(D.probs.map(function (p, t) { return [sx(t), sy2(p[1])]; })) }));
+    cursor(svg, sy2, 0, 1);
+  }
+  function moveCursors() {
+    const c1 = $("chart1Cur"), c2 = $("chart2Cur");
+    if (c1) { c1.setAttribute("x1", sx(S.t)); c1.setAttribute("x2", sx(S.t)); }
+    if (c2) { c2.setAttribute("x1", sx(S.t)); c2.setAttribute("x2", sx(S.t)); }
+    const old = document.querySelectorAll(".chart .dot"); old.forEach(function (d) { d.remove(); });
+    if (S.t < T) {
+      $("chart2").appendChild(el("circle", { class: "dot", cx: sx(S.t), cy: sy2(D.probs[S.t][1]), r: 4 }));
+    }
+    if (PONG) $("chart1").appendChild(el("circle", { class: "dot", cx: sx(S.t), cy: sy1(CUM[S.t]), r: 4 }));
+    else $("chart1").appendChild(el("circle", { class: "dot", cx: sx(S.t), cy: sy1(Math.max(y1min, Math.min(y1max, D.observations[S.t][2] / D.obs_limits[2]))), r: 4 }));
+  }
+
+  /* ---------------- table ---------------- */
+  function renderTable() {
+    const n = Math.min(10, T);
+    const heads = ["t", "a_t", "π(" + SHORT[0] + ")", "π(" + SHORT[1] + ")", "r_t", "G_t"].concat(PONG ? ["+1 px", "−1 px", "score"] : ["x", "ẋ", "θ", "θ̇"]);
+    let html = "<thead><tr>" + heads.map(function (h) { return "<th>" + esc(h) + "</th>"; }).join("") + "</tr></thead><tbody>";
+    for (let t = 0; t < n; t++) {
+      const a = D.actions[t], p = D.probs[t], r = D.rewards[t];
+      let cells = ["<td>" + t + "</td>", '<td class="a' + a + '">' + esc(SHORT[a]) + "</td>", "<td>" + fmt(p[0], 3) + "</td>", "<td>" + fmt(p[1], 3) + "</td>",
+        '<td class="' + (r > 0 ? "plus" : r < 0 ? "minus" : "") + '">' + fmtR(r) + "</td>", "<td>" + fmt(D.returns[t], 3) + "</td>"];
+      if (PONG) { const c = D.input_counts[t], s = D.score[t]; cells = cells.concat(["<td>" + c[0] + "</td>", "<td>" + c[1] + "</td>", "<td>" + s[0] + " : " + s[1] + "</td>"]); }
+      else { const o = D.observations[t]; cells = cells.concat(["<td>" + fmt(o[0], 3) + "</td>", "<td>" + fmt(o[1], 3) + "</td>", "<td>" + fmt(deg(o[2]), 1) + "°</td>", "<td>" + fmt(o[3], 3) + "</td>"]); }
+      html += '<tr class="pick' + (t === S.t ? " cur" : "") + '" data-t="' + t + '">' + cells.join("") + "</tr>";
+    }
+    $("table").innerHTML = html + "</tbody>";
+    for (const tr of $("table").querySelectorAll("tr.pick")) tr.addEventListener("click", function () { stop(); setT(Number(tr.dataset.t)); });
+    $("foot").innerHTML = "Click a row to show that step. a<sub>t</sub> is sampled from π(· | s<sub>t</sub>)" + (D.greedy ? " (here: the most probable action)" : "") +
+      "; G<sub>t</sub> = Σ<sub>k≥t</sub> γ<sup>k−t</sup> r<sub>k</sub> with γ = " + D.gamma + " is what weights log π(a<sub>t</sub>|s<sub>t</sub>) in the policy gradient." +
+      (PONG ? " +1 px / −1 px: non-zero pixels of the network input." : " θ is shown in degrees; the state itself holds radians.");
+  }
+
+  function renderPoints() {
+    if (!PONG || !D.points) return;
+    $("pointsPanel").hidden = false;
+    const heads = ["#", "who scored", "ended at step", "rally (steps)", "rally (game time)", "score after"];
+    let html = "<thead><tr>" + heads.map(function (h) { return "<th>" + esc(h) + "</th>"; }).join("") + "</tr></thead><tbody>";
+    for (const p of D.points) {
+      html += '<tr class="pick" data-t="' + p.step + '" data-n="' + p.n + '"><td>' + p.n + '</td><td class="' + (p.scorer === "agent" ? "plus" : "minus") + '">' + p.scorer +
+        "</td><td>" + p.step + "</td><td>" + p.rally + "</td><td>" + gameTime(p.rally) + "</td><td>" + p.score[0] + " : " + p.score[1] + "</td></tr>";
+    }
+    $("pointsTable").innerHTML = html + "</tbody>";
+    for (const tr of $("pointsTable").querySelectorAll("tr.pick")) tr.addEventListener("click", function () { stop(); setT(Number(tr.dataset.t)); });
+    const n = D.points.length, rallies = D.points.map(function (p) { return p.rally; });
+    const mean = rallies.length ? rallies.reduce(function (a, b) { return a + b; }, 0) / rallies.length : 0;
+    $("pointsFoot").textContent = (n ? n + " point" + (n === 1 ? "" : "s") + " in " + T + " steps · a rally lasts " + mean.toFixed(0) + " steps (" + gameTime(mean) +
+      ") on average, shortest " + Math.min.apply(null, rallies) + ", longest " + Math.max.apply(null, rallies) + ". " : "No point yet in these " + T + " steps. ") +
+      "Click a row to jump to the end of that rally." + (D.cut ? " (Only the steps shown are counted.)" : "");
+  }
+  function render() {
+    renderScene(); renderTiles(); renderControls(); moveCursors();
+    for (const tr of $("table").querySelectorAll("tr.pick")) tr.classList.toggle("cur", Number(tr.dataset.t) === S.t);
+    if (PONG && D.points) { const pt = pointAt(S.t); for (const tr of $("pointsTable").querySelectorAll("tr.pick")) tr.classList.toggle("cur", !!pt && Number(tr.dataset.n) === pt.n); }
+  }
+
+  /* ---------------- wiring ---------------- */
+  $("btnStep").addEventListener("click", function () { stop(); setT(S.t + 1); });
+  $("btnBack").addEventListener("click", function () { stop(); setT(S.t - 1); });
+  $("btnPlay").addEventListener("click", play);
+  $("btnReset").addEventListener("click", function () { stop(); setT(0); });
+  $("btnEnd").addEventListener("click", function () { stop(); setT(T); });
+  $("btnReward").addEventListener("click", nextReward);
+  $("selSpeed").addEventListener("change", function () { S.speed = Number($("selSpeed").value) || 1; });
+  $("range").addEventListener("input", function () { stop(); setT($("range").value); });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName) && ev.target.type !== "range") return;
+    if (ev.key === "ArrowRight") { stop(); setT(S.t + 1); ev.preventDefault(); }
+    else if (ev.key === "ArrowLeft") { stop(); setT(S.t - 1); ev.preventDefault(); }
+    else if (ev.key === " ") { play(); ev.preventDefault(); }
+    else if (ev.key === "Home") { stop(); setT(0); ev.preventDefault(); }
+    else if (ev.key === "End") { stop(); setT(T); ev.preventDefault(); }
+  });
+  seekable($("chart1")); seekable($("chart2"));
+
+  // Inside the dashboard, size the iframe to the content so the panel has no inner scrollbar (the iframe is
+  // same-origin; standalone there is no frameElement and nothing happens). Streamlit gives the iframe's element
+  // container the fixed height it was created with, so that container is resized too; if the page is embedded
+  // some other way, nothing is resized and the iframe keeps its fixed height and scrolls. The content wrapper's
+  // height is measured, not the document's: the document is never shorter than the iframe, which would feed back.
+  function fitFrame() {
+    try {
+      const f = window.frameElement;
+      if (!f) return;
+      const box = f.parentElement;
+      if (!box || box.getAttribute("data-testid") !== "stElementContainer") return;
+      const h = Math.ceil($("viewer").getBoundingClientRect().height) + 20;
+      if (Math.abs(h - f.getBoundingClientRect().height) > 2 || Math.abs(h - box.getBoundingClientRect().height) > 2) {
+        f.style.height = h + "px";
+        box.style.height = h + "px";
+      }
+    } catch (e) { /* cross-origin: keep the fixed height */ }
+  }
+  renderHeader(); drawChart1(); drawChart2(); renderTable(); renderPoints(); render();
+  fitFrame(); window.addEventListener("resize", fitFrame); window.setInterval(fitFrame, 800);
+  if (window.location.hash === "#play") play();
+})();
+</script>
+</body>
+</html>

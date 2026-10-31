@@ -1,22 +1,26 @@
-"""`python run.py report`: assemble report/report.md from the answers, figures and test results,
-then render it to report/report.pdf, and the run instructions (report/instructions.md) to
-report/instructions.pdf.
+"""`python run.py report`: assemble report/report.md from the answers, figures and test results, then render it
+to report/report.pdf. The report opens with the submission details, the run instructions (report/instructions.md)
+and a table of contents, then follows the handout's order. An answer places a registered figure inline with
+`{{figure:KEY}}` (report/answers.py); it is numbered in sequence with the figures shown above the answers.
 """
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from report import answers
-from report.questions import QUESTION_BY_ID, SECTIONS, Question, questions_for
-from rl.outputs import FIGURE_BY_KEY, RESULTS, read_json, tests_dir
+from report.answers import FIGURE_TOKEN
+from report.questions import SECTIONS, Question, questions_for
+from rl.outputs import FIGURE_BY_KEY, RESULTS, Figure, read_json, tests_dir
 
 REPORT_DIR = Path(__file__).resolve().parent
 REPORT_FILE = REPORT_DIR / "report.md"
 REPORT_PDF = REPORT_DIR / "report.pdf"
-INSTRUCTIONS_PDF = REPORT_DIR / "instructions.pdf"
 TITLE = "Assignment 1: Reinforcement Learning"
+CONTENTS = "Contents"  # heading of the table of contents; report/pdf.py sets the list under it with page numbers
 PENDING = "*Answer pending.*"
+HEADING = re.compile(r"(#{1,6})\s+(.*)")
 
 
 def _quote(text: str) -> list[str]:
@@ -34,6 +38,30 @@ def _demote(markdown: str) -> str:
         fenced ^= line.lstrip().startswith("```")
         lines.append(f"#{line}" if not fenced and line.startswith("#") else line)
     return "\n".join(lines)
+
+
+def _anchor(text: str, seen: dict[str, int]) -> str:
+    """GitHub's anchor for a heading: lower case, punctuation dropped, spaces to hyphens, -1, -2, … for repeats."""
+    slug = re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", re.sub(r"[`*]", "", text).strip().lower()))
+    n = seen.get(slug, -1) + 1
+    seen[slug] = n
+    return slug if n == 0 else f"{slug}-{n}"
+
+
+def _contents(lines: list[str]) -> list[str]:
+    """The table of contents: a linked list of the report's h2 and h3 headings, in order."""
+    seen: dict[str, int] = {}
+    entries, fenced = [], False
+    for line in lines:
+        fenced ^= line.lstrip().startswith("```")
+        m = HEADING.match(line)
+        if fenced or not m:
+            continue
+        level, text = len(m.group(1)), m.group(2).strip()
+        anchor = _anchor(text, seen)
+        if level in (2, 3) and text != CONTENTS:
+            entries.append(f"{'  ' * (level - 2)}- [{text}](#{anchor})")
+    return [f"## {CONTENTS}", "", *entries, ""]
 
 
 def _tests_block(section: str) -> list[str]:
@@ -59,15 +87,17 @@ def _tests_block(section: str) -> list[str]:
     return lines + [""]
 
 
+def _figure(fig: Figure, fig_no: int, out_dir: Path) -> list[str]:
+    if fig.file.exists():
+        return [f"![{fig.alt}]({os.path.relpath(fig.file, out_dir)})", "", f"*Figure {fig_no}. {fig.caption}*", ""]
+    return [f"*Figure {fig_no} (pending). {fig.caption} Generate it with `{fig.command}`.*", ""]
+
+
 def _question(q: Question, text: str, fig_no: int, out_dir: Path) -> tuple[list[str], int]:
     lines = [f"### {q.title}", "", *_quote(q.prompt), ""]
     for key in q.figures:
-        fig = FIGURE_BY_KEY[key]
         fig_no += 1
-        if fig.file.exists():
-            lines += [f"![]({os.path.relpath(fig.file, out_dir)})", "", f"*Figure {fig_no}. {fig.caption}*", ""]
-        else:
-            lines += [f"*Figure {fig_no} (pending). {fig.caption} Generate it with `{fig.command}`.*", ""]
+        lines += _figure(FIGURE_BY_KEY[key], fig_no, out_dir)
     for run in q.evals:
         stats = read_json(RESULTS / "pg" / run / "eval.json")
         if stats:
@@ -79,7 +109,16 @@ def _question(q: Question, text: str, fig_no: int, out_dir: Path) -> tuple[list[
         lines += _tests_block(q.tests)
     if q.source:
         text = _demote(text)
-    lines += [text.strip() or PENDING, ""]
+
+    def inline_figure(m: re.Match) -> str:
+        nonlocal fig_no
+        fig = FIGURE_BY_KEY.get(m.group(1))
+        if fig is None:
+            return f"*Unknown figure `{m.group(1)}` (rl/outputs.py lists the keys).*"
+        fig_no += 1
+        return "\n".join(_figure(fig, fig_no, out_dir)).strip()
+
+    lines += [FIGURE_TOKEN.sub(inline_figure, text).strip() or PENDING, ""]
     return lines, fig_no
 
 
@@ -94,7 +133,7 @@ def build_report(path: Path = REPORT_FILE) -> Path:
         lines.append(f"**{label}:** {value or '*pending*'}  ")
     lines.append("")
 
-    fig_no = 0
+    fig_no, contents_at = 0, len(lines)
     for section in SECTIONS:
         if section.key != "submission":
             lines += [f"## {section.title} ({section.points} points)", ""]
@@ -103,27 +142,18 @@ def build_report(path: Path = REPORT_FILE) -> Path:
             if section.key == "submission":
                 block[0] = f"## {q.title}"
             lines += block
+        if section.key == "submission":
+            contents_at = len(lines)  # the table of contents follows the run instructions
+    lines[contents_at:contents_at] = _contents(lines)
     path.write_text("\n".join(lines).rstrip() + "\n")
     return path
 
 
-def instructions_markdown() -> str:
-    """report/instructions.md under a title line with your name and the repository link."""
-    meta = answers.load()["meta"]
-    url = meta.get("repo_url", "").strip()
-    byline = " · ".join(x for x in (TITLE, meta.get("name", "").strip(), f"<{url}>" if url else "") if x)
-    body = answers.text(QUESTION_BY_ID["how_to_run"], {})
-    return f"# How to run the code\n\n{byline}\n\n{body}"
-
-
 def build_pdfs() -> list[Path]:
-    """report/report.pdf (from report.md, built first) and report/instructions.pdf. Needs reportlab."""
+    """report/report.pdf from report.md (built first when it is missing). Needs reportlab."""
     from report.pdf import markdown_to_pdf
 
     author = answers.load()["meta"].get("name", "")
     if not REPORT_FILE.exists():
         build_report()
-    return [
-        markdown_to_pdf(REPORT_FILE.read_text(), REPORT_PDF, title=TITLE, author=author),
-        markdown_to_pdf(instructions_markdown(), INSTRUCTIONS_PDF, title=f"{TITLE}: how to run the code", author=author),
-    ]
+    return [markdown_to_pdf(REPORT_FILE.read_text(), REPORT_PDF, title=TITLE, author=author)]

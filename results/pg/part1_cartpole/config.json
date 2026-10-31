@@ -1,0 +1,14 @@
+{
+  "env": "cartpole",
+  "part": 1,
+  "gamma": 0.95,
+  "lr": 0.01,
+  "episodes": 1000,
+  "baseline": "none",
+  "seed": 0,
+  "device": "cpu",
+  "eval_episodes": 500,
+  "extra": {},
+  "host": "Vincents-Air",
+  "cuda_visible_devices": null
+}

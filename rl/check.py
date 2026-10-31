@@ -45,17 +45,21 @@ def main(args: argparse.Namespace) -> int:
 
     if _version("gymnasium"):
         from rl.pg.envs import ENV_IDS, make_env
+        from rl.pg.watch import headless_pygame
 
+        headless_pygame()
         for name, env_id in ENV_IDS.items():
             try:
-                env = make_env(name)
+                env = make_env(name, render_mode="rgb_array")  # frames are rendered for the dashboard's game viewer
                 env.reset(seed=0)
                 env.step(env.action_space.sample())
+                frame = env.render()
                 env.close()
-                print(f"env       {env_id}: ok")
+                print(f"env       {env_id}: ok (renders {frame.shape[1]}x{frame.shape[0]} frames)")
             except Exception as e:  # noqa: BLE001
                 ok = False
-                print(f"env       {env_id}: FAILED ({type(e).__name__}: {e})")
+                hint = " - pip install 'gymnasium[classic-control]'" if "pygame" in str(e) else ""
+                print(f"env       {env_id}: FAILED ({type(e).__name__}: {e}){hint}")
 
     print("ready" if ok else "some checks failed")
     return 0 if ok else 1

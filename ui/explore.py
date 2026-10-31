@@ -25,8 +25,12 @@ FIELDS = {
     "tol": "1e-8",
 }
 # label -> (run tag for the Run panel, the FIELDS it changes). The handout's run has no tag: it is the one the report shows.
+# Edge cases 1-3 are the ones written up in the report's Edge cases section (dp_edge_cases in report/answers.json).
 PRESETS = {
     "Handout parameters": ("", {}),
+    "Edge case 1: arrivals overflow the station": ("edge_case_1", {"arrivals": "50, 100, 200"}),
+    "Edge case 2: 4 or 5 customers arrive every period": ("edge_case_2", {"arrivals": "4, 5"}),
+    "Edge case 3: full platform, 5 arrive every period": ("edge_case_3", {"arrivals": "5"}),
     "Deterministic arrivals (A_t = 3)": ("deterministic", {"arrivals": "3"}),
     "Non-uniform arrivals (1 with probability 0.8, 5 with 0.2)": ("nonuniform", {"arrivals": "1, 5", "arrival_probs": "0.8, 0.2"}),
     "Myopic agent (γ = 0)": ("myopic", {"gamma": 0.0}),
@@ -40,6 +44,8 @@ PRESETS = {
     "Up to two shuttles per period": ("two_shuttles", {"max_dispatch": 2}),
     "Holding cost charged before the dispatch": ("holding_before", {"holding_charged": "before_dispatch"}),
 }
+# Presets whose replay starts with the platform full (s_0 = M) instead of empty.
+FULL_START = {"Edge case 3: full platform, 5 arrive every period"}
 TOLERANCES = ["1e-4", "1e-6", "1e-8", "1e-10"]
 
 
@@ -136,9 +142,17 @@ def _theme() -> str | None:
     return kind if kind in ("light", "dark") else None
 
 
-def parameter_widgets() -> None:
+def parameter_widgets(run_enabled: bool) -> None:
     st.selectbox("Preset", list(PRESETS), key="xp_preset", on_change=_apply_preset,
                  help="Each preset changes one thing about the handout's problem; edit any field afterwards.")
+    st.button("Run this case", icon=":material/arrow_upward:", type="primary", on_click=_send_to_run, key="xp_to_run",
+              disabled=not run_enabled,
+              help="Runs these parameters for real: fills the Run panel at the top of this tab with "
+                   "`python run.py dp --set …` and a run tag (so the handout's results and figures stay) and scrolls "
+                   "up to it; press Launch there.")
+    st.caption("Edge cases 1–3 are the ones written up in the Edge cases section; the other presets change one thing "
+               "at a time. The explorer on the right solves the problem below as you change it; **Run this case** "
+               "runs it as a job, like the handout's.")
     c1, c2 = st.columns(2)
     c1.number_input("Capacity K", min_value=0, max_value=100_000, step=1, key=_key("capacity"), help="customers one shuttle carries")
     c2.number_input("Station limit M", min_value=1, max_value=5000, step=1, key=_key("max_customers"),
@@ -170,16 +184,13 @@ def explore_panel() -> None:
         )
         left, right = st.columns([1, 3], gap="medium")
         with left:
-            parameter_widgets()
-            try:
-                params = params_from_state()
+            try:  # the widgets' values are already in session_state when the script reruns
+                params, problem = params_from_state(), None
             except ValueError as e:
-                st.error(f"Fix the parameters: {e}")
-                params = None
-            st.button("Run this case in the Run panel", icon=":material/arrow_upward:", on_click=_send_to_run, key="xp_to_run",
-                      disabled=params is None,
-                      help="Fills the Run panel at the top of this tab with `python run.py dp --set …` for these parameters "
-                           "(with a run tag, so the handout's results and figures stay) and scrolls up to it; press Launch there.")
+                params, problem = None, str(e)
+            parameter_widgets(run_enabled=params is not None)
+            if problem:
+                st.error(f"Fix the parameters: {problem}")
         with right:
             if params is None:
                 st.info("The explorer appears once the parameters are valid.")
@@ -190,6 +201,8 @@ def explore_panel() -> None:
             except ValueError as e:
                 st.error(f"Could not solve this problem: {e}")
                 return
+            if st.session_state["xp_preset"] in FULL_START:
+                data = {**data, "replay": {"start": params.max_customers}}  # the replay starts with the platform full
             html = render_html(data, theme=_theme())
             components.html(html, height=HEIGHT, scrolling=True)
             st.download_button("Download this page as standalone HTML", html, file_name="shuttle_explorer.html", mime="text/html",

@@ -134,7 +134,7 @@ def github_page(url: str) -> str | None:
 
 
 def refresh_report(root: Path, say: Callable[[str], None]) -> None:
-    """Rebuild report/report.md and the PDFs when the answers or results they are built from are newer."""
+    """Rebuild report/report.md and report.pdf when the answers or results they are built from are newer."""
     report_md = root / "report" / "report.md"
     inputs = [root / "report" / "answers.json"]
     if (root / "results").is_dir():
@@ -144,7 +144,7 @@ def refresh_report(root: Path, say: Callable[[str], None]) -> None:
         return
     if report_md.exists() and report_md.stat().st_mtime >= max(p.stat().st_mtime for p in inputs):
         return
-    say("the answers or results are newer than the report; rebuilding report/report.md and the PDFs")
+    say("the answers or results are newer than the report; rebuilding report/report.md and report.pdf")
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     try:
@@ -154,6 +154,6 @@ def refresh_report(root: Path, say: Callable[[str], None]) -> None:
         try:
             build_pdfs()
         except ImportError as e:
-            say(f"  skipped the PDFs: {e} (pip install -r requirements-ui.txt)")
+            say(f"  skipped the PDF: {e} (pip install -r requirements-ui.txt)")
     except Exception as e:  # noqa: BLE001 - saving must not depend on the report build
         say(f"  could not rebuild the report ({e}); saving what is there")

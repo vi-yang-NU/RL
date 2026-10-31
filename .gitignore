@@ -8,13 +8,14 @@ logs/
 results/**/*.pt
 results/**/progress.jsonl
 
-# Per-user settings written by setup.sh / the dashboard (your NetID); never committed
+# Your settings, written by setup.sh / the dashboard (NetID, default server, key path): never committed.
+# .env is where they live now (.env.example lists the variables); config/deepdish.local.json is the older place.
+.env
 config/deepdish.local.json
 config/*.local.json
 
 # Credentials never belong in the repository: passwords are typed into the dashboard and SSH keys stay in ~/.ssh
 .streamlit/secrets.toml
-.env
 *.pem
 *.key
 id_rsa*

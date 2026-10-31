@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, NamedTuple, Sequence
 
 import numpy as np
 import torch
@@ -238,8 +238,15 @@ def train(cfg: TrainConfig, env: Any, policy: torch.nn.Module, baseline: Any, lo
     return rewards
 
 
-def evaluate(cfg: TrainConfig, env: Any, policy: torch.nn.Module, episodes: int) -> list[float]:
-    """Roll out `episodes` episodes with the trained policy and return their total rewards."""
+class EpisodeStats(NamedTuple):
+    """What an evaluation episode is summarised by: its total reward and its length in steps."""
+
+    reward: float
+    length: int
+
+
+def evaluate_episodes(cfg: TrainConfig, env: Any, policy: torch.nn.Module, episodes: int) -> list[EpisodeStats]:
+    """Roll out `episodes` episodes with the trained policy and return each one's total reward and length."""
     opts = options_for(cfg)
     device = torch.device(cfg.device)
     policy.to(device)
@@ -251,5 +258,10 @@ def evaluate(cfg: TrainConfig, env: Any, policy: torch.nn.Module, episodes: int)
     for i in range(int(episodes)):
         ep = run_episode(env, adapter, policy, device, greedy=opts.eval_greedy, max_steps=opts.max_steps,
                          seed=cfg.seed + 10_000 if i == 0 else None)
-        results.append(ep.total_reward)
+        results.append(EpisodeStats(ep.total_reward, ep.length))
     return results
+
+
+def evaluate(cfg: TrainConfig, env: Any, policy: torch.nn.Module, episodes: int) -> list[float]:
+    """Roll out `episodes` episodes with the trained policy and return their total rewards."""
+    return [stats.reward for stats in evaluate_episodes(cfg, env, policy, episodes)]

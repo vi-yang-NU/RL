@@ -12,9 +12,12 @@ import socket
 from dataclasses import asdict
 
 from rl.outputs import ENV_LABELS, ROOT, ProgressLogger, pg_dir, write_json
-from rl.pg.envs import ENV_IDS, GAMMA
+from rl.pg.envs import ENV_IDS, GAMMA, SECONDS_PER_STEP
 
 DEFAULT_EPISODES = {"cartpole": 1000, "pong": 2000}
+# The episode rewards each environment makes possible: CartPole-v1 pays 1 per step up to its 500-step cap; a Pong-v5
+# game ends when one side reaches 21 points, so the reward is (agent's points − opponent's points) in [−21, 21].
+REWARD_RANGE = {"cartpole": (0, 500), "pong": (-21, 21)}
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -30,6 +33,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="auto (cuda when available, else cpu), cpu, cuda, cuda:N or mps (Apple GPU); cuda/mps fail if unavailable")
     parser.add_argument("--tag", help="suffix for the results folder, to keep several runs side by side")
     parser.add_argument("--eval-only", action="store_true", help="skip training; evaluate the saved policy.pt")
+    parser.add_argument("--replot", action="store_true",
+                        help="redraw training_curve.png and eval_histogram.png from the saved train.json and eval.json, nothing else")
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="extra setting for cfg.extra (repeatable)")
 
 
@@ -50,8 +55,8 @@ def main(args: argparse.Namespace) -> int:
     from rl.pg.baselines import DEFAULT_BASELINE, make_baseline
     from rl.pg.envs import make_env
     from rl.pg.policy import build_policy
-    from rl.pg.reinforce import TrainConfig, evaluate, train
-    from rl.plotting import plot_reward_histogram, plot_training_curve
+    from rl.pg.reinforce import TrainConfig, evaluate_episodes, train
+    from rl.plotting import plot_training_curve
 
     baseline = "none" if args.part == 1 else (args.baseline or DEFAULT_BASELINE)
     if baseline is None:
@@ -87,7 +92,9 @@ def main(args: argparse.Namespace) -> int:
     )
     run_dir = pg_dir(args.part, args.env, args.tag)
     label = f"Part {args.part}, {ENV_LABELS[args.env]}" + (f" (baseline: {baseline})" if args.part == 2 else "")
-    subtitle = f"γ = {cfg.gamma}, Adam lr = {cfg.lr:g}"
+    subtitle = f"γ = {cfg.gamma}, Adam lr = {cfg.lr:g} · overlaid: the moving average of the rewards over 100 episodes"
+    if args.replot:
+        return replot(cfg, run_dir, label, subtitle)
     print(f"== {label} -> {run_dir.relative_to(ROOT)} on {device}")
     write_json(
         run_dir / "config.json",
@@ -104,18 +111,122 @@ def main(args: argparse.Namespace) -> int:
             rewards = train(cfg, env, policy, make_baseline(cfg.baseline, cfg, env), ProgressLogger(run_dir))
             write_json(run_dir / "train.json", {"episode_rewards": rewards})
             torch.save(policy.state_dict(), run_dir / "policy.pt")
-            path = plot_training_curve(rewards, run_dir / "training_curve.png", f"{label}: training reward", subtitle)
+            path = plot_training_curve(rewards, run_dir / "training_curve.png",
+                                       f"{label}: episode reward against the number of training episodes", subtitle)
             print(f"   saved {path.relative_to(ROOT)}")
 
-        eval_rewards = evaluate(cfg, env, policy, cfg.eval_episodes)
-        path, mean, std = plot_reward_histogram(
-            eval_rewards, run_dir / "eval_histogram.png", f"{label}: rewards of the trained policy"
-        )
-        write_json(run_dir / "eval.json", {"episodes": len(eval_rewards), "mean": mean, "std": std, "rewards": eval_rewards})
+        stats = evaluate_episodes(cfg, env, policy, cfg.eval_episodes)
+        eval_rewards = [s.reward for s in stats]
+        path, mean, std = save_eval(cfg, run_dir, label, eval_rewards, [s.length for s in stats])
         print(f"   saved {path.relative_to(ROOT)}  (mean {mean:.2f}, std {std:.2f} over {len(eval_rewards)} episodes)")
+        record_game(cfg, policy, run_dir, label)
     except NotImplementedError as e:
         print(f"TODO: {e}")
         return 1
     finally:
         env.close()
     return 0
+
+
+def game_time(env: str, steps: float) -> str:
+    """`steps` of `env` as game time, e.g. "51 s" or "2 min 10 s"."""
+    seconds = float(steps) * SECONDS_PER_STEP[env]
+    if seconds < 100:
+        return f"{seconds:.0f} s" if seconds >= 10 else f"{seconds:.1f} s"
+    minutes, rest = divmod(int(round(seconds)), 60)
+    return f"{minutes} min {rest} s"
+
+
+def length_summary(env: str, lengths) -> tuple[dict, str]:
+    """(eval.json fields, one line of text) about how long the evaluation episodes lasted."""
+    import numpy as np
+
+    n = np.asarray(lengths, dtype=float)
+    fields = {"lengths": [int(x) for x in lengths], "mean_length": float(n.mean()), "std_length": float(n.std()),
+              "min_length": int(n.min()), "max_length": int(n.max()), "seconds_per_step": SECONDS_PER_STEP[env]}
+    same = n.min() == n.max()
+    text = (f"every episode lasted {int(n[0])} steps ({game_time(env, n[0])} of game time)" if same else
+            f"length: mean {n.mean():.0f} steps ({game_time(env, n.mean())} of game time), min {int(n.min())}, max {int(n.max())}")
+    return fields, text
+
+
+def eval_note(env: str, rewards, lengths=None) -> str | None:
+    """A sentence for the histogram when the evaluation rewards need explaining (all the same, at a bound)."""
+    import numpy as np
+
+    r = np.asarray(rewards, dtype=float)
+    if len(r) == 0 or r.min() < r.max():
+        return None
+    value, lo, hi = float(r[0]), *REWARD_RANGE[env]
+    lasted = ""
+    if lengths is not None and len(lengths):
+        n = np.asarray(lengths, dtype=float)
+        lasted = (f" Each game lasted {int(n[0])} steps, {game_time(env, n[0])} of game time." if n.min() == n.max() else
+                  f" The games lasted {n.mean():.0f} steps on average ({game_time(env, n.mean())} of game time).")
+    if env == "cartpole" and value == hi:
+        return (f"Every one of the {len(r)} episodes reached the 500-step cap of CartPole-v1 ({game_time(env, hi)} of game "
+                "time), the highest reward possible: the pole never fell and the cart never left the track, so the "
+                "distribution is one bar at 500 and the standard deviation is 0.")
+    if env == "pong" and value == lo:
+        return (f"Every one of the {len(r)} games was lost 0 : 21, the lowest reward possible, and all games are identical. "
+                "That happens when the policy takes the same action in every state: Pong-v5's sticky actions then change "
+                "nothing, so the game is deterministic and the standard deviation is 0." + lasted)
+    return f"All {len(r)} episodes scored {value:g}, so the standard deviation is 0." + lasted
+
+
+def save_eval(cfg, run_dir, label: str, eval_rewards, lengths=None):
+    """Draw eval_histogram.png and write eval.json (the statistics, the episode lengths, the note and every reward).
+    Returns (path, mean, std)."""
+    from rl.plotting import plot_reward_histogram, reward_stats
+
+    note = eval_note(cfg.env, eval_rewards, lengths)
+    length_fields, length_text = length_summary(cfg.env, lengths) if lengths else ({}, None)
+    path, mean, std = plot_reward_histogram(
+        eval_rewards, run_dir / "eval_histogram.png", f"{label}: histogram of the {len(eval_rewards)} episode rewards",
+        value_range=REWARD_RANGE[cfg.env], integer=True, note=note, length_text=length_text,
+    )
+    write_json(run_dir / "eval.json", {**reward_stats(eval_rewards), **length_fields, "note": note,
+                                       "rewards": list(map(float, eval_rewards))})
+    return path, mean, std
+
+
+def replot(cfg, run_dir, label: str, subtitle: str) -> int:
+    """`--replot`: redraw the two figures of a finished run from its saved numbers."""
+    from rl.outputs import read_json
+    from rl.plotting import plot_training_curve
+
+    train = read_json(run_dir / "train.json")
+    evaluation = read_json(run_dir / "eval.json")
+    if not train or not evaluation:
+        print(f"nothing to replot: {run_dir.relative_to(ROOT)} has no train.json / eval.json yet")
+        return 1
+    path = plot_training_curve(train["episode_rewards"], run_dir / "training_curve.png",
+                               f"{label}: episode reward against the number of training episodes", subtitle)
+    print(f"   saved {path.relative_to(ROOT)}")
+    path, mean, std = save_eval(cfg, run_dir, label, evaluation["rewards"], evaluation.get("lengths"))
+    print(f"   saved {path.relative_to(ROOT)}  (mean {mean:.2f}, std {std:.2f} over {len(evaluation['rewards'])} episodes)")
+    return 0
+
+
+def record_game(cfg, policy, run_dir, label: str) -> None:
+    """One more episode with the trained policy, frame by frame, for the dashboard's "Watch the game" panel
+    (episode.npz) and the report's first-ten-steps figure (first_steps.png). Rendering needs pygame for CartPole;
+    if it is missing, the run still counts and the message says what to install."""
+    from rl.pg.options import options_for
+    from rl.pg.watch import first_steps_figure, record_episode, render_env, save_recording
+
+    try:
+        game_env = render_env(cfg.env)
+    except Exception as e:  # noqa: BLE001 - e.g. gymnasium's DependencyNotInstalled for pygame
+        print(f"   skipped the recorded episode: {type(e).__name__}: {e}  (pip install -r requirements.txt)")
+        return
+    try:
+        rec = record_episode(cfg, game_env, policy, seed=cfg.seed + 20_000, max_steps=options_for(cfg).max_steps,
+                             greedy=options_for(cfg).eval_greedy,
+                             policy_label=f"Trained policy of {run_dir.relative_to(ROOT)}")
+    finally:
+        game_env.close()
+    path = save_recording(rec, run_dir / "episode.npz")
+    print(f"   saved {path.relative_to(ROOT)}  ({rec.steps} steps, reward {rec.total_reward:g}; watch it in the dashboard)")
+    path = first_steps_figure(rec, run_dir / "first_steps.png", f"{label}: the first 10 steps of one episode")
+    print(f"   saved {path.relative_to(ROOT)}")

@@ -21,12 +21,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from report import answers as answer_store  # noqa: E402
-from report.build import INSTRUCTIONS_PDF, REPORT_FILE, REPORT_PDF, build_pdfs, build_report  # noqa: E402
+from report.build import REPORT_FILE, REPORT_PDF, build_pdfs, build_report  # noqa: E402
 from report.questions import QUESTIONS, SECTION_BY_KEY, SECTIONS, Question, questions_for  # noqa: E402
 from rl.outputs import FIGURE_BY_KEY, RESULTS, read_json, tests_dir  # noqa: E402
 from rl.plotting import BLUE_DARK, BLUE_LIGHT, moving_average  # noqa: E402
 from ui import deepdish as dd  # noqa: E402
 from ui.explore import explore_panel  # noqa: E402
+from ui.watch import watch_panel  # noqa: E402
 
 # job name -> (label, command). Policy-gradient job names double as their results folder.
 JOBS = {
@@ -61,8 +62,8 @@ STATUS_STYLE = {"passed": ":green[PASSED]", "failed": ":red[FAILED]", "error": "
 st.set_page_config(page_title="RL Assignment 1", layout="wide", initial_sidebar_state="expanded")
 # Streamlit shows the sidebar's collapse arrow only while the pointer is over the sidebar; keep it visible.
 st.html("<style>[data-testid='stSidebarCollapseButton'] { visibility: visible !important; }</style>")
-# Run and Explore are the interactive panels; a bar in the theme's primary colour on their left sets them apart from the
-# written answers below.
+# Run, Explore and Watch are the interactive panels; a bar in the theme's primary colour on their left sets them apart
+# from the written answers below.
 ACCENT = st.get_option("theme.primaryColor") or "#2a78d6"
 st.html(f"<style>[class*='st-key-interactive_'] {{ border-left: 4px solid {ACCENT}; padding-left: 0.75rem; }}</style>")
 
@@ -139,9 +140,13 @@ def connection_panel(cfg: dict, statuses: list[dd.ServerStatus], here: int | Non
         st.success(f"This dashboard is running on deepdish{here}, so jobs run here directly.")
         return status
 
-    user = st.text_input("NetID", value=server.user, help="Saved to config/deepdish.local.json")
-    if user.strip() and user.strip() != server.user:
-        dd.save_local_config(user=user.strip())
+    sources = dd.setting_sources()
+    user_from_env = sources.get("user") == "environment"
+    user = st.text_input("NetID", value=server.user, disabled=user_from_env,
+                         help="Set by DEEPDISH_USER in this dashboard's environment" if user_from_env
+                         else "Saved to .env (DEEPDISH_USER); .env.example lists every setting")
+    if not user_from_env and user.strip() and user.strip() != server.user:
+        dd.save_settings(user=user.strip())
         server_statuses.clear()
         st.rerun()
     st.text_input("Password (only if you have no SSH key)", type="password", key="password",
@@ -149,8 +154,9 @@ def connection_panel(cfg: dict, statuses: list[dd.ServerStatus], here: int | Non
     left, right = st.columns(2)
     left.button("Connect", type="primary", on_click=_connect, args=(server,))
     right.button("Disconnect", on_click=_disconnect, args=(server,), disabled=not status.ready)
-    if n != cfg.get("default_server"):
-        st.button(f"Make deepdish{n} the default", on_click=dd.save_local_config, kwargs={"default_server": n})
+    if n != cfg.get("default_server") and sources.get("default_server") != "environment":
+        st.button(f"Make deepdish{n} the default", on_click=dd.save_settings, kwargs={"default_server": n},
+                  help="Saved to .env (DEEPDISH_DEFAULT_SERVER)")
 
     with st.expander("How connection status works"):
         st.markdown(
@@ -327,7 +333,7 @@ def jobs_panel(tab: str, target) -> None:
 # --- deepdish setup (sidebar) -------------------------------------------------------------------
 
 def _save_remote_dir() -> None:
-    dd.save_local_config(remote_dir=st.session_state.remote_dir.strip() or "~/RL")
+    dd.save_settings(remote_dir=st.session_state.remote_dir.strip() or "~/RL")
 
 
 def _server_info(server: dd.Server, remote_dir: str) -> tuple[bool, str]:
@@ -408,6 +414,22 @@ def _save_answer(question_id: str, key: str) -> None:
     answer_store.save_answer(question_id, st.session_state[key])
 
 
+def _markdown_with_figures(text: str) -> None:
+    """st.markdown, with every `{{figure:KEY}}` (a figure placed inline in the report) shown as the figure itself."""
+    for i, part in enumerate(answer_store.FIGURE_TOKEN.split(text)):
+        if i % 2 == 0:
+            if part.strip():
+                st.markdown(part)
+        elif part in FIGURE_BY_KEY:
+            fig = FIGURE_BY_KEY[part]
+            if fig.file.exists():
+                st.image(str(fig.file), caption=fig.caption)
+            else:
+                st.info(f"**Figure not generated yet.** {fig.caption}\n\nRun `{fig.command}`.")
+        else:
+            st.warning(f"Unknown figure `{part}` (rl/outputs.py lists the keys).")
+
+
 def answer_box(q: Question, saved: dict) -> None:
     """The answer as formatted text for reading, with the box for writing it below."""
     key = f"answer::{q.id}"
@@ -416,7 +438,7 @@ def answer_box(q: Question, saved: dict) -> None:
     text = st.session_state[key].strip()
     st.markdown("**Answer**")
     if text:
-        st.markdown(text)
+        _markdown_with_figures(text)
     else:
         st.caption("Not answered yet.")
     with st.expander("Edit answer" if text else "Write answer", expanded=not text):
@@ -442,10 +464,18 @@ def show_eval(run: str) -> None:
     if not stats:
         st.caption("Mean and standard deviation over the 500 evaluation episodes appear here after the run.")
         return
-    mean, std, episodes = st.columns(3)
+    mean, std, median, extremes, episodes = st.columns(5)
     mean.metric("Mean episode reward", f"{stats['mean']:.2f}")
     std.metric("Standard deviation", f"{stats['std']:.2f}")
+    median.metric("Median", f"{stats['median']:g}" if "median" in stats else "–")
+    extremes.metric("Min · max", f"{stats['min']:g} · {stats['max']:g}" if "min" in stats else "–")
     episodes.metric("Evaluation episodes", stats["episodes"])
+    if "mean_length" in stats:
+        seconds = stats["mean_length"] * stats.get("seconds_per_step", 0)
+        st.caption(f"How long the episodes lasted: mean {stats['mean_length']:.0f} steps ({seconds:.0f} s of game time), "
+                   f"min {stats['min_length']}, max {stats['max_length']}.")
+    if stats.get("note"):
+        st.caption(stats["note"])
 
 
 def show_tests(section: str) -> None:
@@ -507,6 +537,11 @@ def scroll_to_panel(key: str) -> None:
 </script>""", height=0)
 
 
+def _scroll_later(key: str, where: str) -> None:
+    """Button callback: scroll to a panel of tab `key` ("run" or "explore") on the rerun the click causes."""
+    st.session_state[f"scroll_to::{key}"] = where
+
+
 def section_tab(key: str, cfg: dict, status: dd.ServerStatus, target, gpu: str) -> None:
     section = SECTION_BY_KEY[key]
     st.header(section.title, anchor=key)
@@ -514,16 +549,27 @@ def section_tab(key: str, cfg: dict, status: dd.ServerStatus, target, gpu: str) 
     with st.container(key=f"interactive_run_{key}"):
         with st.expander("Run", expanded=True, icon=":material/play_arrow:"):
             run_panel(key, cfg, status, target, gpu)
-    if st.session_state.pop(f"scroll_to::{key}", None) == "run":  # asked by a button lower on the page
+    scroll = st.session_state.pop(f"scroll_to::{key}", None)  # asked by a button lower on the page
+    if scroll == "run":
         scroll_to_panel(f"interactive_run_{key}")
     if key == "dp":
         with st.container(key="interactive_explore"):
             explore_panel()
+        if scroll == "explore":
+            scroll_to_panel("interactive_explore")
+    if key in ("pg1", "pg2"):
+        with st.container(key=f"interactive_watch_{key}"):
+            watch_panel(key)
     saved = answer_store.load()["answers"]
     for q in questions_for(key):
         with st.container(border=True):
             st.subheader(q.title, anchor=q.id)
             st.markdown("\n".join(f"> {line}" for line in q.prompt.splitlines()))
+            if q.id == "dp_edge_cases":
+                st.button("Run these edge cases in the explorer", icon=":material/arrow_upward:", key="edge_cases_to_explorer",
+                          on_click=_scroll_later, args=(key, "explore"),
+                          help="Scrolls up to Explore the problem, whose presets Edge case 1, 2 and 3 are these; "
+                               "Run this case there runs one as a real job.")
             if q.figures:
                 show_figures(q.figures)
             for run in q.evals:
@@ -565,12 +611,15 @@ GUIDE = """
 - **The Run panel** at the top of a part's tab reruns that part: choose a job, press **Launch**, and follow its log
   and reward curve under **Jobs**. When it has finished, press R to reload the plots. Click the panel's header to
   collapse it.
+- **Explore the problem** (tab 2) and **Watch the game** (the policy-gradient tabs) are the interactive panels: the
+  first solves the shuttle problem as you change it and replays it period by period; the second plays one episode
+  of CartPole-v1 or Pong-v5 frame by frame, with what the network sees and does at each step.
 - **The sidebar** sets where jobs run (this computer or deepdish) and on which GPU; its **Set up deepdish** panel
   is only needed to run jobs on the deepdish GPU servers. Hide it with « at its top and bring it back with » at
   the top left.
 - **If the dashboard stops loading** (a blank page or a connection error): reload it once the terminal shows
-  `Dashboard: http://localhost:8501`. *If the dashboard does not load*, in the instructions below (section 3),
-  lists the other steps and the report as the fallback.
+  `Dashboard: http://localhost:8501`, open that address by hand, or start it on another port
+  (`python run.py ui --port 8502`) or in another browser. The report has everything if it still does not load.
 
 Nothing has to be run to grade: the plots, statistics and test results shown are the submitted ones. Rerunning a
 part overwrites them in your copy (`git checkout results/` restores them); a **Run tag** keeps a policy-gradient
@@ -597,8 +646,7 @@ def overview_tab() -> None:
             st.button(f"Fill from git remote ({remote['repo_url']})", on_click=_fill_from_git, args=(remote,))
 
     st.subheader("Where to find each part")
-    rows = [("Submission details, instructions for running the code", "", TABS["overview"],
-             "this tab; the instructions are also a PDF (below)")]
+    rows = [("Submission details, instructions for running the code", "", TABS["overview"], "this tab")]
     rows += [(s.title, f"{s.points} ({s.breakdown})", TABS[s.key], " · ".join(q.title for q in questions_for(s.key)))
              for s in SECTIONS if s.key in TABS]
     st.markdown("\n".join(["| Part of the handout | Points | Tab | Sections, in order |", "|---|---|---|---|",
@@ -610,7 +658,7 @@ def overview_tab() -> None:
     for q in questions_for("submission"):
         with st.expander(q.title):
             st.caption(f"The handout asks for \"{q.prompt.rstrip('.').lower()}\". Written in `report/{q.source}`; "
-                       f"*Build* turns it into this section of the report and into `report/{INSTRUCTIONS_PDF.name}`.")
+                       "*Build* puts it into this section of the report, before the table of contents.")
             st.markdown(answer_store.text(q, data))
 
     st.subheader("Progress")
@@ -624,13 +672,12 @@ def overview_tab() -> None:
 
     st.subheader("Report")
     columns = st.columns(3)
-    for column, path, mime in zip(columns, (REPORT_PDF, INSTRUCTIONS_PDF, REPORT_FILE),
-                                  ("application/pdf", "application/pdf", "text/markdown")):
+    for column, path, mime in zip(columns, (REPORT_PDF, REPORT_FILE), ("application/pdf", "text/markdown")):
         if path.exists():
             column.download_button(f"Download {path.name}", path.read_bytes(), file_name=path.name, mime=mime)
-    st.caption("*Build* writes report.md, then report.pdf (the submitted report) and instructions.pdf (the "
-               "instructions for running the code on their own), all in report/. The same as `python run.py report`.")
-    st.button("Build report and PDFs", on_click=_build)
+    st.caption("*Build* writes report/report.md, then report/report.pdf (the submitted report, with a table of "
+               "contents). The same as `python run.py report`.")
+    st.button("Build report", on_click=_build)
     show_output("build_output")
     if REPORT_FILE.exists():
         with st.expander("Markdown source"):
@@ -642,7 +689,7 @@ def _build() -> None:
     try:
         written = [REPORT_FILE, *build_pdfs()]
     except ImportError as e:
-        st.session_state.build_output = (False, f"Wrote {REPORT_FILE.relative_to(ROOT)}, but not the PDFs: {e}.\n"
+        st.session_state.build_output = (False, f"Wrote {REPORT_FILE.relative_to(ROOT)}, but not the PDF: {e}.\n"
                                                 "Install reportlab with: pip install -r requirements-ui.txt")
         return
     st.session_state.build_output = (True, "Wrote " + ", ".join(str(p.relative_to(ROOT)) for p in written))

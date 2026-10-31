@@ -68,10 +68,13 @@ PONG = (
 )
 
 
-def _shared(section: str) -> list[Question]:
+def _shared(section: str, validation_figures: tuple[str, ...] = ()) -> list[Question]:
+    """The edge-case, validation and extended-validation questions asked of every part; `validation_figures`
+    are shown with the validation question, above the harness's results."""
     return [
         Question(f"{section}_edge_cases", section, "Edge cases", EDGE_CASES),
-        Question(f"{section}_validation", section, "Tests for validating the correctness of your algorithm", VALIDATION, tests=section),
+        Question(f"{section}_validation", section, "Tests for validating the correctness of your algorithm", VALIDATION,
+                 figures=validation_figures, tests=section),
         Question(f"{section}_extended", section, "Additional validation with 3 more months", EXTENDED),
     ]
 
@@ -103,7 +106,7 @@ QUESTIONS: list[Question] = [
         figures=("dp_policy_iteration",),
     ),
     Question("dp_assumptions", "dp", "Assumptions", "If you make any other assumption, please state it in your report."),
-    *_shared("dp"),
+    *_shared("dp", validation_figures=("dp_tests_table",)),
     # Policy Gradient Part 1
     Question(
         "pg1_description", "pg1", "Solution overview",
@@ -120,7 +123,7 @@ QUESTIONS: list[Question] = [
         "pg1_pong", "pg1", "(b) Pong-v5, discount factor 0.99", f"{PONG} {PG_PLOTS}",
         figures=("part1_pong_train", "part1_pong_eval"), evals=("part1_pong",),
     ),
-    *_shared("pg1"),
+    *_shared("pg1", validation_figures=("part1_cartpole_steps", "part1_pong_steps")),
     # Policy Gradient Part 2
     Question(
         "pg2_baseline", "pg2", "Baseline: choice and implementation",
@@ -137,7 +140,7 @@ QUESTIONS: list[Question] = [
         "pg2_pong", "pg2", "(b) Pong-v5 with baseline", f"Repeat Part 1 (b) with your baseline. {PG_PLOTS}",
         figures=("part2_pong_train", "part2_pong_eval"), evals=("part2_pong",),
     ),
-    *_shared("pg2"),
+    *_shared("pg2", validation_figures=("part2_cartpole_steps", "part2_pong_steps")),
 ]
 QUESTION_BY_ID = {q.id: q for q in QUESTIONS}
 
