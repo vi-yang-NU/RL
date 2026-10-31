@@ -82,9 +82,12 @@ The files behind them are in `results/` (section 8 lists the folders).
   the tiles and the period table show the state, the cost and its breakdown, V*(s_t), Q*(s_t, ·) and the running
   discounted total at each step. The panel beside it steps through the first 10 iterations of enumeration, value
   iteration or policy iteration (values at selected states, the dispatch threshold, the change per step), and the
-  charts show V*, the policy bands and the convergence for the selected step.
+  charts show V*, the policy bands and the convergence for the selected step. **Run this case in the Run panel**
+  (under the widgets) copies the current parameters into the Run panel at the top of the tab, as `--set`
+  arguments with a run tag so the handout's results stay, and scrolls up to it; press **Launch** there.
 - **The Run panel** at the top of each part's tab reruns that part; click its header to collapse it. Choose a job
-  (for example *(a) CartPole-v1* or *Validation tests*), optionally add extra arguments, and press **Launch**.
+  (for example *(a) CartPole-v1* or *Validation tests*), optionally add a run tag and extra arguments, and press
+  **Launch**.
   Under **Jobs**, choose a job to see its log and, while a policy-gradient run trains, its reward curve (turn on
   auto-refresh to follow it). When the job has finished, press R to reload the page and its plots.
 - **The sidebar** on the left sets where jobs run: **this computer** (the default) or a deepdish server, and the

@@ -236,9 +236,10 @@ def run_panel(tab: str, cfg: dict, status: dd.ServerStatus, target, gpu: str) ->
     argv = list(JOBS[preset][1])
     name = preset
     left, right = st.columns([1, 2])
-    if preset.startswith("part"):
+    if preset == "dp" or preset.startswith("part"):
         tag = left.text_input("Run tag (optional)", key=f"job_tag::{tab}",
-                              help="Keeps several runs side by side: results/pg/<run>_<tag>/")
+                              help="Keeps several runs side by side: results/dp_<tag>/ or results/pg/<run>_<tag>/. "
+                                   "The untagged run is the one the report shows.")
         tag = re.sub(r"[^A-Za-z0-9_-]", "", tag)
         if tag:
             argv += ["--tag", tag]
@@ -483,6 +484,29 @@ def show_tests(section: str) -> None:
                 st.code("\n".join(t["stdout"].splitlines()[-40:]), language=None)
 
 
+def scroll_to_panel(key: str) -> None:
+    """Scroll the page to the container `st.container(key=key)` and open it if it is a collapsed expander. Streamlit
+    has no scroll API, so a zero-height component iframe (same origin as the page) does it once, on this rerun."""
+    nonce = st.session_state["scroll_nonce"] = st.session_state.get("scroll_nonce", 0) + 1
+    components.html(f"""<script data-nonce="{nonce}">
+(function () {{
+  try {{
+    var doc = window.parent.document, panel = doc.querySelector(".st-key-{key}");
+    if (!panel) return;
+    var details = panel.querySelector("details");
+    if (details && !details.open) {{ var s = details.querySelector("summary"); if (s) s.click(); }}
+    setTimeout(function () {{
+      var main = doc.querySelector('[data-testid="stMain"]') || doc.scrollingElement;
+      var header = doc.querySelector('[data-testid="stHeader"]');
+      var offset = (header ? header.getBoundingClientRect().height : 0) + 12;   // the fixed top bar covers that much
+      var top = main.scrollTop + panel.getBoundingClientRect().top - main.getBoundingClientRect().top - offset;
+      main.scrollTo({{top: Math.max(0, top), behavior: "smooth"}});
+    }}, 80);
+  }} catch (e) {{}}
+}})();
+</script>""", height=0)
+
+
 def section_tab(key: str, cfg: dict, status: dd.ServerStatus, target, gpu: str) -> None:
     section = SECTION_BY_KEY[key]
     st.header(section.title, anchor=key)
@@ -490,6 +514,8 @@ def section_tab(key: str, cfg: dict, status: dd.ServerStatus, target, gpu: str) 
     with st.container(key=f"interactive_run_{key}"):
         with st.expander("Run", expanded=True, icon=":material/play_arrow:"):
             run_panel(key, cfg, status, target, gpu)
+    if st.session_state.pop(f"scroll_to::{key}", None) == "run":  # asked by a button lower on the page
+        scroll_to_panel(f"interactive_run_{key}")
     if key == "dp":
         with st.container(key="interactive_explore"):
             explore_panel()

@@ -116,7 +116,7 @@ On your laptop, choose **Jobs run on: this computer** to run the same jobs local
 
 | Command | What it does | Output |
 |---|---|---|
-| `python run.py dp [--method enumeration\|value_iteration\|policy_iteration] [--set KEY=VALUE] [--backend numpy\|cuda] [--explorer FILE]` | Section 2 (a)–(c); `--set` changes any `ShuttleParams` field; `--backend cuda` uses the kernels in `rl/cuda`; `--explorer` also writes the interactive explorer page (below) for those parameters | `results/dp/` |
+| `python run.py dp [--method enumeration\|value_iteration\|policy_iteration] [--set KEY=VALUE] [--tag NAME] [--backend numpy\|cuda] [--explorer FILE]` | Section 2 (a)–(c); `--set` changes any `ShuttleParams` field; `--tag` keeps that run (figures included) in `results/dp_NAME/` so the handout's results stay; `--backend cuda` uses the kernels in `rl/cuda`; `--explorer` also writes the interactive explorer page (below) for those parameters | `results/dp/` or `results/dp_NAME/` |
 | `python run.py pg --part 1 --env cartpole` | Part 1 (a); `--env pong` for (b) | `results/pg/part1_cartpole/` |
 | `python run.py pg --part 2 --env pong [--baseline value\|mean\|time]` | Part 2 with a baseline (default `value`) | `results/pg/part2_pong/` |
 | `python run.py tests --section dp\|pg1\|pg2\|all [-k text] [--list]` | validation experiments | `results/tests/<section>.json` |
@@ -198,6 +198,9 @@ change the three solvers rerun (milliseconds) and the page on the right is rebui
 - **Charts:** V* with the selected step's V_k or V^{π_k} over it and the current state marked; the policy bands
   (π*, the selected step's policy, the replayed policy) with thresholds; and the convergence history on a log
   scale with the first ten steps marked and the tolerance line. A values table lists V*, π*, Q* for every state.
+- **Run this case in the Run panel** (under the widgets) copies the current parameters into the Run panel at the
+  top of the tab as `python run.py dp --set …`, with a run tag (`results/dp_<tag>/`, so the handout's results and
+  figures stay), and scrolls up to it; **Launch** there runs the edge case for real, on this computer or deepdish.
 
 `python run.py dp --explorer results/dp/explore.html [--set …]` writes the same page as a standalone file
 (`results/dp/explore.html` holds it for the handout's parameters); opening it with `#auto` after the file name

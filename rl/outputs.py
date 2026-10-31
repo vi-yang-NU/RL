@@ -24,8 +24,9 @@ SECTIONS = {
 ENV_LABELS = {"cartpole": "CartPole-v1", "pong": "Pong-v5"}
 
 
-def dp_dir() -> Path:
-    return RESULTS / "dp"
+def dp_dir(tag: str | None = None) -> Path:
+    """results/dp/ (the handout run the report shows) or results/dp_<tag>/ for a run kept apart from it."""
+    return RESULTS / (f"dp_{tag}" if tag else "dp")
 
 
 def pg_run_name(part: int, env: str, tag: str | None = None) -> str:

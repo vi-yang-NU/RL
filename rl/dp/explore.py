@@ -234,6 +234,21 @@ def render_html(data: dict[str, Any], theme: str | None = None) -> str:
     return html.replace("__THEME_ATTR__", attr).replace("__ENGINE__", engine).replace("__DATA__", payload)
 
 
+def override_arguments(params: ShuttleParams, tol: float | None = None) -> list[str]:
+    """The `python run.py dp` arguments that reproduce `params`: `--set KEY=VALUE` for every field that differs
+    from the handout's defaults (in the form `rl.params.parse_overrides` reads), plus `--tol` when it is given
+    and not the default 1e-8."""
+    defaults = asdict(ShuttleParams())
+    args: list[str] = []
+    for key, value in asdict(params).items():
+        if value != defaults[key]:
+            text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+            args += ["--set", f"{key}={text}"]
+    if tol is not None and tol != 1e-8:
+        args += ["--tol", f"{tol:g}"]
+    return args
+
+
 def write_explorer(path: Path, params: ShuttleParams, tol: float = 1e-8, steps: int = 10, theme: str | None = None) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

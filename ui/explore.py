@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from dataclasses import asdict
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-from rl.dp.explore import explore, render_html
+from rl.dp.explore import explore, override_arguments, render_html
 from rl.dp.shuttle import HOLDING_CHARGED, ShuttleParams
 
 HEIGHT = 1330  # iframe height; the page scrolls inside it if a parameter set needs more
@@ -23,20 +24,21 @@ FIELDS = {
     "max_customers": 200, "gamma": 0.95, "horizon": 500, "max_dispatch": 1, "holding_charged": "after_dispatch",
     "tol": "1e-8",
 }
+# label -> (run tag for the Run panel, the FIELDS it changes). The handout's run has no tag: it is the one the report shows.
 PRESETS = {
-    "Handout parameters": {},
-    "Deterministic arrivals (A_t = 3)": {"arrivals": "3"},
-    "Non-uniform arrivals (1 with probability 0.8, 5 with 0.2)": {"arrivals": "1, 5", "arrival_probs": "0.8, 0.2"},
-    "Myopic agent (γ = 0)": {"gamma": 0.0},
-    "Patient agent (γ = 0.99)": {"gamma": 0.99},
-    "No discounting over T = 20 periods (γ = 1)": {"gamma": 1.0, "horizon": 20},
-    "Tiny station (M = 20, K = 5)": {"max_customers": 20, "capacity": 5},
-    "Expensive waiting (c_h = 20)": {"holding_cost": 20.0},
-    "Cheap shuttle (c_f = 10)": {"dispatch_cost": 10.0},
-    "Free waiting (c_h = 0)": {"holding_cost": 0.0},
-    "Short horizon (T = 5)": {"horizon": 5},
-    "Up to two shuttles per period": {"max_dispatch": 2},
-    "Holding cost charged before the dispatch": {"holding_charged": "before_dispatch"},
+    "Handout parameters": ("", {}),
+    "Deterministic arrivals (A_t = 3)": ("deterministic", {"arrivals": "3"}),
+    "Non-uniform arrivals (1 with probability 0.8, 5 with 0.2)": ("nonuniform", {"arrivals": "1, 5", "arrival_probs": "0.8, 0.2"}),
+    "Myopic agent (γ = 0)": ("myopic", {"gamma": 0.0}),
+    "Patient agent (γ = 0.99)": ("patient", {"gamma": 0.99}),
+    "No discounting over T = 20 periods (γ = 1)": ("gamma1_T20", {"gamma": 1.0, "horizon": 20}),
+    "Tiny station (M = 20, K = 5)": ("tiny_station", {"max_customers": 20, "capacity": 5}),
+    "Expensive waiting (c_h = 20)": ("expensive_waiting", {"holding_cost": 20.0}),
+    "Cheap shuttle (c_f = 10)": ("cheap_shuttle", {"dispatch_cost": 10.0}),
+    "Free waiting (c_h = 0)": ("free_waiting", {"holding_cost": 0.0}),
+    "Short horizon (T = 5)": ("short_horizon", {"horizon": 5}),
+    "Up to two shuttles per period": ("two_shuttles", {"max_dispatch": 2}),
+    "Holding cost charged before the dispatch": ("holding_before", {"holding_charged": "before_dispatch"}),
 }
 TOLERANCES = ["1e-4", "1e-6", "1e-8", "1e-10"]
 
@@ -52,7 +54,7 @@ def _init_state() -> None:
 
 
 def _apply_preset() -> None:
-    values = {**FIELDS, **PRESETS[st.session_state["xp_preset"]]}
+    values = {**FIELDS, **PRESETS[st.session_state["xp_preset"]][1]}
     for field, value in values.items():
         st.session_state[_key(field)] = value
 
@@ -68,7 +70,12 @@ def _numbers(text: str, kind):
 
 def params_from_state() -> ShuttleParams:
     """ShuttleParams from the widgets; ValueError with a readable message when they do not make sense."""
-    get = lambda field: st.session_state[_key(field)]  # noqa: E731
+    return params_from_values({field: st.session_state[_key(field)] for field in FIELDS})
+
+
+def params_from_values(values: dict) -> ShuttleParams:
+    """ShuttleParams from widget values {field: value} (see FIELDS)."""
+    get = values.__getitem__
     try:
         arrivals = _numbers(get("arrivals"), int)
     except ValueError:
@@ -92,6 +99,28 @@ def params_from_state() -> ShuttleParams:
         max_dispatch=int(get("max_dispatch")),
         holding_charged=get("holding_charged"),
     )
+
+
+def _run_tag(params: ShuttleParams) -> str:
+    """Run tag for the Run panel: the selected preset's tag while the fields still match it, otherwise "custom"."""
+    tag, overrides = PRESETS[st.session_state["xp_preset"]]
+    try:
+        return tag if params == params_from_values({**FIELDS, **overrides}) else "custom"
+    except ValueError:
+        return "custom"
+
+
+def _send_to_run() -> None:
+    """Button callback: put this problem into tab 2's Run panel (job, run tag, `--set` arguments) and ask the page
+    to scroll up to it (ui.app renders the scroll on this rerun)."""
+    try:
+        params = params_from_state()
+    except ValueError:
+        return
+    st.session_state["job_preset::dp"] = "dp"
+    st.session_state["job_tag::dp"] = _run_tag(params)
+    st.session_state["job_extra::dp"] = shlex.join(override_arguments(params, float(st.session_state[_key("tol")])))
+    st.session_state["scroll_to::dp"] = "run"
 
 
 @st.cache_data(show_spinner=False, max_entries=64)
@@ -147,6 +176,10 @@ def explore_panel() -> None:
             except ValueError as e:
                 st.error(f"Fix the parameters: {e}")
                 params = None
+            st.button("Run this case in the Run panel", icon=":material/arrow_upward:", on_click=_send_to_run, key="xp_to_run",
+                      disabled=params is None,
+                      help="Fills the Run panel at the top of this tab with `python run.py dp --set …` for these parameters "
+                           "(with a run tag, so the handout's results and figures stay) and scrolls up to it; press Launch there.")
         with right:
             if params is None:
                 st.info("The explorer appears once the parameters are valid.")

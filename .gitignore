@@ -8,7 +8,16 @@ logs/
 results/**/*.pt
 results/**/progress.jsonl
 
-# Per-user settings written by setup.sh / the dashboard
+# Per-user settings written by setup.sh / the dashboard (your NetID); never committed
 config/deepdish.local.json
+config/*.local.json
+
+# Credentials never belong in the repository: passwords are typed into the dashboard and SSH keys stay in ~/.ssh
+.streamlit/secrets.toml
+.env
+*.pem
+*.key
+id_rsa*
+id_ed25519*
 
 .DS_Store

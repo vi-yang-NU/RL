@@ -7,6 +7,7 @@ the solvers' own iterates, the finite-horizon policies are exact, the embedded M
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -16,7 +17,8 @@ from pathlib import Path
 import numpy as np
 
 from rl.dp import solvers
-from rl.dp.explore import ENGINE, explore, render_html, sparse_successors, thin_history, write_explorer
+from rl.dp.explore import ENGINE, explore, override_arguments, render_html, sparse_successors, thin_history, write_explorer
+from rl.params import apply_overrides, parse_overrides
 from rl.dp.shuttle import ShuttleParams, build_mdp
 
 SMALL = ShuttleParams(max_customers=30, capacity=5, horizon=12)
@@ -248,6 +250,28 @@ class EngineUnderNodeTests(unittest.TestCase):
         self.assertEqual(t, 1)
         self.assertAlmostEqual(total, self.mdp.costs[2, 0])
         self.assertGreater(self.mdp.transitions[0, 2, state], 0.0)
+
+
+class OverrideArgumentTests(unittest.TestCase):
+    """`override_arguments` writes the `--set` flags the explorer's "Run this case" button puts into the Run panel."""
+
+    def test_handout_needs_no_arguments(self):
+        self.assertEqual(override_arguments(ShuttleParams()), [])
+        self.assertEqual(override_arguments(ShuttleParams(), tol=1e-8), [])
+
+    def test_arguments_round_trip_through_the_command_line_parser(self):
+        cases = [SMALL, ShuttleParams(arrivals=(1, 5), arrival_probs=(0.8, 0.2)), ShuttleParams(holding_charged="before_dispatch"),
+                 ShuttleParams(gamma=1.0, horizon=20), ShuttleParams(max_dispatch=2, dispatch_cost=10.0, holding_cost=0.0)]
+        for params in cases:
+            args = override_arguments(params)
+            self.assertTrue(args and all(a == "--set" for a in args[::2]), args)
+            self.assertEqual(shlex.split(shlex.join(args)), args, "survives the Run panel's text box")
+            self.assertEqual(apply_overrides(ShuttleParams(), parse_overrides(args[1::2])), params)
+
+    def test_strings_are_bare_and_tol_is_added(self):
+        args = override_arguments(ShuttleParams(holding_charged="before_dispatch"), tol=1e-10)
+        self.assertEqual(args, ["--set", "holding_charged=before_dispatch", "--tol", "1e-10"])
+        self.assertEqual(override_arguments(ShuttleParams(arrivals=(3,))), ["--set", "arrivals=[3]"])
 
 
 if __name__ == "__main__":

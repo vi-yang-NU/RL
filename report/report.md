@@ -87,9 +87,12 @@ The files behind them are in `results/` (section 8 lists the folders).
   the tiles and the period table show the state, the cost and its breakdown, V*(s_t), Q*(s_t, ·) and the running
   discounted total at each step. The panel beside it steps through the first 10 iterations of enumeration, value
   iteration or policy iteration (values at selected states, the dispatch threshold, the change per step), and the
-  charts show V*, the policy bands and the convergence for the selected step.
+  charts show V*, the policy bands and the convergence for the selected step. **Run this case in the Run panel**
+  (under the widgets) copies the current parameters into the Run panel at the top of the tab, as `--set`
+  arguments with a run tag so the handout's results stay, and scrolls up to it; press **Launch** there.
 - **The Run panel** at the top of each part's tab reruns that part; click its header to collapse it. Choose a job
-  (for example *(a) CartPole-v1* or *Validation tests*), optionally add extra arguments, and press **Launch**.
+  (for example *(a) CartPole-v1* or *Validation tests*), optionally add a run tag and extra arguments, and press
+  **Launch**.
   Under **Jobs**, choose a job to see its log and, while a policy-gradient run trains, its reward curve (turn on
   auto-refresh to follow it). When the job has finished, press R to reload the page and its plots.
 - **The sidebar** on the left sets where jobs run: **this computer** (the default) or a deepdish server, and the
@@ -265,13 +268,26 @@ Assume the number of people can't exceed 200, and use discount rate of 0.95 (and
 
 1. Enumeration: backward induction, so we're assuming a Time period = 500,  we start at the last Time step, and apply the bellman backup going backwards 
 2. Value iteration: Repeat Bellman on one value table until it converges then read the best policy off the table, time = infinite. 
-3. Policy iteration: evaluate and greedy change policy and stop when policy stops changing
+3. Policy iteration: evaluate and greedy change policy and stop when policy stops changing 
+
+For optimal implementation, I have also asked claude to generate the cuda files which will generate the grids on the cores and be able to generate faster results with its instructions compared to python
 
 ### MDP formulation
 
 > Model the shuttle dispatching problem as a Markov Decision Process, given K = 15, c_f = 100, c_h = 2 and A_t ~ Unif{1, 2, 3, 4, 5}. The number of people in the station cannot exceed 200; use discount rate γ = 0.95.
 
-Markov Decision Process means
+Markov Decision Process means 5 things we should define: 1. state 2. action 3. transition 4. cost and 5. objective 
+Reward is revenue-cost, and random demand is the amount of people arriving at the station.
+
+
+1. State: The state is the amount of people that are currently on the platform A
+2. Action: the action is taking people on the shuttle to station B
+3. Transition: 
+      3a. Number of people left on Station A after we transport is max(0, current_size - K). # K is capacity of a shuttle if it is dispatched
+      3b. If we don't dispatch shuttle, the amount of people would be current_size, 
+      3c. at each timestep its's randomly going to be Unif {1, 2, 3, 4, 5}, so next state is = to min(people left + A_t, 200).
+4. Cost: we have two costs in this problem: 1. Dispatching the shuttle will cost 100 per time step, and cost per customer on platform is 2c per timestep incurred after dispatch, with c being customer. 
+5. Our objective function is maximizing our reward, which is defined by the revenue - cost, or in this case because we don't have revenue, we just want to minimize our cost over time: min(cost)
 
 ### (a) Enumeration, T = 500
 
@@ -281,7 +297,10 @@ Markov Decision Process means
 
 *Figure 1. Section 2 (a), enumeration with T = 500: optimal value function at time 0 versus number of customers waiting.*
 
-*Answer pending.*
+In our very last case assume that it will not cost us anything at the last step. Technically speaking because the timestep is so far into the future, making this assumption is fine, that being said its possible to do more work in the future in this regards. 
+
+We performed backwards induction (essentially (dynamic programming) with time = 500 we apply the bellman backup and record the minimizing cost. Within this plot it shows that Essentially by computing it backwards, we know that at timestep for timestep we're computing a table of all the possible people in the station A. 
+On the x axis we show the amount of people waiting at Station A when we end at our timestep of 0 (remember as we're starting from 500 and going to 0). Our Y axis shows our expected value at our last timestep.
 
 ### (b) Value iteration, T = ∞
 
@@ -291,7 +310,7 @@ Markov Decision Process means
 
 *Figure 2. Section 2 (b), value iteration (T = ∞): optimal value function versus number of customers waiting.*
 
-*Answer pending.*
+We start with V(s) = 0 and then for every s value, we apply the Bellman backup and repeat. And thus our convergence criteria is when largest V change across all states is below our condition (which in our case we set it to 10^-6). Due to our discount factor by 0.95, our errors keep shrinking . Value iteration has no timesteps (in comaprison to enumeration) and it's similar to enumeration, however we don't work from our 500 timestep value backwards. We assume to have some sort of convergence criteria, which we'll define to 10^-6, and the discount factor allows us to compare future costs with todays' costs. It converged in 340 steps in comparison to before for our enumeration (since we started at T=500), due to our convergence factor.
 
 ### (c) Policy iteration
 
@@ -301,7 +320,9 @@ Markov Decision Process means
 
 *Figure 3. Section 2 (c), policy iteration: optimal policy versus number of customers waiting.*
 
-*Answer pending.*
+In our Policy iteration, we. have two actions: either we dispatch, or we hold in our station A. Policy iteration is also another form of DP problems. When we're looking at every customer s step, essentially because we're keeping track of all possible actions at every customer step we will always be able to solve the optimal strategy at each customer step. Thus essentially we're stepping through all possible 200 states (assume the empty platform s = 0) would be 201 states.  At each state we evaluate two actions: whether we should dispatch or if we should hold. As we can see at the graph above, it makes sense for us to always dispatch when our value >= 13, to create our optimal policy. 
+
+The reason why this is called policy iteration is we then take this information and run it through
 
 ### Assumptions
 
@@ -313,7 +334,11 @@ The number of people can't exceed 200, and Discount rate of 0.95
 
 > What edge cases may arise from the problem and how did you handle them? Document the edge cases of the problem that you considered and explain how you ensured that your solution has handled them correctly.
 
-*Answer pending.*
+Edge case 1: Exceeding the number of people on the platform. What would happen if we exceed the number of people we can hold on Platform A, aka if the amount of passengers goes above 200 due to an exponential amount of people coming into the station? 
+
+Edge case 2: There's a lot in this prompt that we can technically break, for example: Unif {1, 2, 3, 4, 5}, assuming a world where, we can think of an example lets say at an arbitrary timestep we have 4 people come in, next time step we have another 4 come in, and then another 4, then we only get 5 in for the next 3 timesteps. What should the optimal policy be in this case? until when do we hold all of the people. 
+
+Edge case 3: Wince it's not possible for us to have 0 or - amount of people that part of the edge case is fine. What if we assume that the original platform has 200 people? and we have 5 people arriving at every timestep. So every number above 200 will be discarded assumingly since we can't go above 200 people. Would it make more sense for us to not dispatch to reduce the amount of cost? would that ever be the case.
 
 ### Tests for validating the correctness of your algorithm
 
@@ -343,13 +368,14 @@ Validation results from `python run.py tests --section dp` (last run 2026-10-26 
 - **Policy iteration improves monotonically and ends at the greedy fixed point**: improvement steps from 'never dispatch' = 6, improvement steps from 'always dispatch' = 5
 - **The CUDA kernels reproduce the solvers**: enumeration kernel time (s) = 0.4445, value iteration kernel time (s) = 0.0074, policy iteration kernel time (s) = 0.2702, simulation kernel time (s) = 1.155, simulation grid (blocks × threads) = 391 × 256
 
-*Answer pending.*
+We imported the lean module to verify the mathematical correctness for the program. Additionally in explore the problem we manually stepped through each of the states for 10 states to evaluate if the program is working as intended
 
 ### Additional validation with 3 more months
 
 > Given an additional 3 months (extended period), what other validation tests and experiments would you perform?
 
-*Answer pending.*
+- One thing I would like to do is for enumeration for us to not assume the condition that we will not incur any costs at our timestep of 500. Assuming the case where there is a terminal valye of 1 trillion for every s, then we get very super marginal changes in our value at timestep 0 (i.e. $7.27)
+- We can start breaking a lot of hte original prompt by assuming a few things: i.e. if we start having platform B also have people moving to Platform A, we're assuming there's an amount of people in the car existing, and it doesn't fully clear all the time at B.
 
 ## 3. Policy Gradient: Part 1 (40 points)
 

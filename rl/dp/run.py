@@ -5,10 +5,12 @@
     python run.py dp --set capacity=10 --set gamma=0.9 any ShuttleParams field (see rl/dp/shuttle.py)
     python run.py dp --tol 1e-8 --max-iter 5000        value iteration / policy iteration controls
     python run.py dp --explorer results/dp/explore.html  also write the interactive explorer page
+    python run.py dp --set capacity=5 --tag tiny      keep this run in results/dp_tiny/ (the handout's results stay)
 """
 from __future__ import annotations
 
 import argparse
+import re
 from dataclasses import asdict
 from pathlib import Path
 
@@ -29,6 +31,14 @@ METHODS = {
 VALUE_LABEL = "Optimal expected discounted cost V(s)"
 
 
+def _shown(path: Path) -> str:
+    """The path as printed: relative to the project when it is inside it (results/ can be elsewhere in tests)."""
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--method", choices=[*METHODS, "all"], default="all", help="which solver to run (default: all)")
     parser.add_argument("--tol", type=float, default=1e-8, help="value iteration stops when the values change less than this")
@@ -37,6 +47,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="override a ShuttleParams field, e.g. --set capacity=10 --set arrivals=[1,2,3] (repeatable)")
     parser.add_argument("--backend", choices=["numpy", "cuda"], default="numpy",
                         help="numpy (default) or the CUDA kernels in rl/cuda (Numba; the CPU simulator without a GPU)")
+    parser.add_argument("--tag", default=None, metavar="NAME",
+                        help="write to results/dp_NAME/ (figures included) instead of results/dp/, so an edge-case run leaves "
+                             "the handout's results, which the report shows, untouched")
     parser.add_argument("--explorer", metavar="FILE", default=None,
                         help="also write the interactive explorer page (dashboard tab 2) for these parameters to FILE")
 
@@ -85,7 +98,8 @@ def main(args: argparse.Namespace) -> int:
     except ValueError as e:
         print(f"error: {e}")
         return 2
-    out = dp_dir()
+    tag = re.sub(r"[^A-Za-z0-9_-]", "", args.tag or "") or None
+    out = dp_dir(tag)
     write_json(out / "params.json", asdict(params))
     if args.backend == "cuda":
         from rl.cuda import dp as cuda_dp
@@ -108,19 +122,20 @@ def main(args: argparse.Namespace) -> int:
         results[name] = result
         write_json(out / f"{name}.json", result.to_json())
         figure = FIGURE_BY_KEY[figure_key]
+        figure_file = out / Path(figure.path).name if tag else figure.file  # tagged runs keep their figures with their data
         if name == "policy_iteration":
-            plot_policy(result.states, result.policy, figure.file, title, subtitle=params.describe(), action_labels=mdp.action_labels)
+            plot_policy(result.states, result.policy, figure_file, title, subtitle=params.describe(), action_labels=mdp.action_labels)
         else:
-            plot_value_function(result.states, result.values, figure.file, title, subtitle=params.describe(), ylabel=VALUE_LABEL)
+            plot_value_function(result.states, result.values, figure_file, title, subtitle=params.describe(), ylabel=VALUE_LABEL)
         print(f"   {summary(name, result, mdp)}")
-        print(f"   saved {figure.file.relative_to(ROOT)}")
+        print(f"   saved {_shown(figure_file)}")
         history = {k: v for k, v in result.history.items() if v}
         if history:
             path = plot_series(
                 history, out / f"{name}_convergence.png", f"{name.replace('_', ' ').capitalize()}: convergence",
                 xlabel="Iteration", ylabel="Value", logy=name != "policy_iteration",
             )
-            print(f"   saved {path.relative_to(ROOT)}")
+            print(f"   saved {_shown(path)}")
 
     if args.explorer:
         from rl.dp.explore import write_explorer
